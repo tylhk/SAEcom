@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>串口助手</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div id="app">
+        <!-- 左侧菜单栏 -->
+        <aside id="sidebar" class="open">
+            <div class="sidebar-header">
+                <button id="toggleSidebar">≡</button>
+                <span>串口窗口</span>
+            </div>
+            <div class="sidebar-actions">
+                <button id="btnNew">新建面板</button>
+                <button id="btnRefreshPorts">刷新串口</button>
+            </div>
+            <ul id="panelList"></ul>
+        </aside>
+
+        <!-- 主工作区 -->
+        <main id="workspace">
+            <div id="panes"></div>
+        </main>
+
+        <!-- 底部功能区 -->
+        <div id="bottomPanel">
+            <!-- 左边按钮区 -->
+            <div id="bottomNav">
+                <button data-page="serial">串口</button>
+                <button data-page="commands">命令</button>
+                <button data-page="about">关于</button>
+            </div>
+
+            <!-- 右边内容区 -->
+            <div id="bottomContent">
+                <!-- 串口页 -->
+                <div class="page" id="page-serial">
+                    <div class="row">
+                        <label>当前面板：</label>
+                        <span id="activePanelLabel">（未选择）</span>
+                        <button id="btnSaveLog">导出面板数据</button>
+                    </div>
+                    <div class="row">
+                        <label>端口：</label>
+                        <select id="selPort"></select>
+                    </div>
+                    <div class="row">
+                        <label>波特率：</label>
+                        <input id="baud" type="number" value="115200" min="110" step="1" />
+                        <label>数据位：</label>
+                        <select id="databits">
+                            <option>8</option>
+                            <option>7</option>
+                            <option>6</option>
+                            <option>5</option>
+                        </select>
+                        <label>停止位：</label>
+                        <select id="stopbits">
+                            <option>1</option>
+                            <option>2</option>
+                        </select>
+                        <label>校验：</label>
+                        <select id="parity">
+                            <option value="none">none</option>
+                            <option value="even">even</option>
+                            <option value="odd">odd</option>
+                            <option value="mark">mark</option>
+                            <option value="space">space</option>
+                        </select>
+                    </div>
+                    <div class="row">
+                        <label>发送：</label>
+                        <input id="inputData" type="text" placeholder="输入要发送的数据…" />
+                        <button id="btnSend">发送</button>
+                        <select id="sendMode">
+                            <option value="text">文本</option>
+                            <option value="hex">HEX</option>
+                        </select>
+                        <select id="append">
+                            <option value="CRLF">CRLF</option>
+                            <option value="none">无结尾</option>
+                            <option value="CR">CR</option>
+                            <option value="LF">LF</option>
+                        </select>
+                        <label>缓冲(ms)：</label>
+                        <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
+                        <label><input type="checkbox" id="echoSend"> 回显</label>
+                    </div>
+                    <div class="row">
+                        <label>文件：</label>
+                        <input id="fileName" type="text" placeholder="拖拽文件到此处…" readonly />
+                        <input id="fileChooser" type="file" style="display:none" />
+                        <button id="btnChooseFile">选择文件</button>
+                        <button id="btnSendFile">发送文件</button>
+                    </div>
+                </div>
+
+                <!-- ✅ 命令页 -->
+                <div class="page" id="page-commands" style="display:none">
+                    <div class="cmd-layout">
+                        <div id="cmdGrid" class="cmd-grid"><!-- 卡片在这里渲染 --></div>
+                        <div id="cmdTools" class="cmd-tools">
+                            <div class="pager">
+                                <button id="cmdPrev" title="上一页">◀</button>
+                                <button id="cmdNext" title="下一页">▶</button>
+                            </div>
+                            <button id="cmdEditPage">编辑命令</button>
+                            <button id="openScript">脚本发送</button>
+                            <div class="repeat">
+                                <label><input type="checkbox" id="cmdRepeat"> 定时发送</label>
+                            </div>
+                            <div class="repeat">
+                                <input id="cmdRepeatMs" type="number" min="1" step="1" value="1000" />
+                                <div class="note">ms</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 关于页 -->
+                <div class="page" id="page-about" style="display:none">
+                    <h3>About</h3>
+                    <p>作者：Satone</p>
+                    <p>
+                        项目主页：
+                        <a href="https://github.com/tylhk/SAEcom"
+                            onclick="window.api.shell.openExternal(this.href); return false;">
+                            https://github.com/tylhk/SAEcom
+                        </a>
+                    </p>
+                    <p>
+                        联系邮箱：
+                        <a href="mailto:satone_shichimiya@outlook.com"
+                            onclick="window.api.shell.openExternal(this.href); return false;">
+                            satone_shichimiya@outlook.com
+                        </a>
+                    </p>
+                </div>
+
+            </div>
+        </div>
+
+        <!-- 新建面板对话框 -->
+        <dialog id="dlgNew">
+            <h3>选择串口并创建面板</h3>
+            <div><select id="dlgPortList" style="width:100%"></select></div>
+            <div style="margin-top:10px;text-align:right">
+                <button id="dlgCancel">取消</button>
+                <button id="dlgCreate">创建</button>
+            </div>
+        </dialog>
+
+        <!-- ✅ 命令编辑对话框 -->
+        <dialog id="dlgCmdEdit">
+            <h3>编辑命令（全局）</h3>
+            <div class="cmd-table-wrap">
+                <table class="cmd-table">
+                    <thead>
+                        <tr>
+                            <th>名称</th>
+                            <th>内容</th>
+                            <th>模式</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cmdTableBody"></tbody>
+                </table>
+            </div>
+            <div class="cmd-edit-actions">
+                <button id="cmdAdd">新增命令</button>
+                <span style="flex:1"></span>
+                <button id="cmdCancel">取消</button>
+                <button id="cmdSave">保存</button>
+            </div>
+        </dialog>
+        <!-- ✅ 脚本工作室对话框 -->
+        <dialog id="dlgScript">
+            <h3>脚本工作室</h3>
+            <div class="script-layout">
+                <textarea id="scriptEditor" placeholder="在此编写脚本（.js）" spellcheck="false"></textarea>
+
+                <div class="script-side">
+                    <div class="script-row">
+                        <button id="btnScriptNew">创建脚本</button>
+                        <button id="btnScriptSave">保存脚本</button>
+                        <button id="btnScriptDelete">删除脚本</button>
+                    </div>
+                    <div class="hint">当前文件：<span id="currentScriptName">（未选中）</span></div>
+                    <div class="script-list-wrap">
+                        <div class="hint">脚本目录：<span id="scriptDirHint"></span></div>
+                        <ul id="scriptList"></ul>
+                    </div>
+                    <div style="flex:1"></div>
+                    <div class="script-actions">
+                        <button id="btnScriptRun">运行脚本</button>
+                        <button id="btnScriptStop" disabled>停止运行</button>
+                        <button id="btnScriptClose">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </dialog>
+        <!-- ✅ 新增：脚本命名对话框 -->
+        <dialog id="dlgScriptName">
+            <h4>新建脚本</h4>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input id="scriptNameInput" type="text" placeholder="输入名称（无需后缀）" style="flex:1" />
+                <span>.js</span>
+            </div>
+            <div style="margin-top:10px;text-align:right;">
+                <button id="scriptNameCancel">取消</button>
+                <button id="scriptNameOk">确定</button>
+            </div>
+        </dialog>
+
+
+        <script src="./renderer.js"></script>
+    </div>
+</body>
+
+</html>

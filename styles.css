@@ -1,0 +1,301 @@
+* { box-sizing: border-box; }
+html, body, #app { height: 100%; margin: 0; }
+
+/* ===== 布局骨架 ===== */
+#app {
+  display: grid;
+  grid-template-columns: 1fr;
+  grid-template-rows: 1fr 180px;
+  grid-template-areas:
+    "workspace"
+    "controlBar";
+  position: relative;
+}
+
+/* ===== 侧边栏（浮窗）===== */
+#sidebar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 180px;
+  background: #fff;
+  border-right: 1px solid #ddd;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: width 0.3s ease;
+  z-index: 10;
+}
+#sidebar.open { width: 260px; }
+#sidebar:not(.open) { width: 50px; }
+
+.sidebar-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border-bottom: 1px solid #eee;
+}
+#sidebar:not(.open) .sidebar-header span { display: none; }
+
+.sidebar-actions {
+  padding: 8px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+#sidebar.open .sidebar-actions button {
+  flex: 1; font-size: 14px;
+}
+#sidebar:not(.open) .sidebar-actions button {
+  width: 32px; height: 32px; padding: 0; font-size: 0;
+}
+#btnNew::before { content: "➕"; font-size: 18px; }
+#btnRefreshPorts::before { content: "🔄"; font-size: 18px; }
+
+#panelList {
+  list-style: none;
+  margin: 0;
+  padding: 0 8px 12px 8px;
+  overflow: auto;
+  flex: 1;
+}
+#panelList li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 4px;
+  border-bottom: 1px dashed #eee;
+}
+#panelList li .actions button { margin-left: 6px; }
+#sidebar:not(.open) #panelList { display: none; }
+
+/* ===== 工作区 ===== */
+#workspace {
+  grid-area: workspace;
+  position: relative;
+  background: #fafafa;
+  overflow: hidden;
+}
+#panes { position: absolute; inset: 0; }
+
+.pane {
+  position: absolute;
+  width: 420px; height: 240px;
+  min-width: 360px;
+  background: #fff; border: 1px solid #ddd; border-radius: 8px;
+  box-shadow: 0 3px 12px rgba(0,0,0,.06);
+  overflow: hidden;
+}
+.pane .title {
+  height: 36px; display: flex; align-items: center; justify-content: space-between;
+  padding: 0 8px; background: #f3f3f3; cursor: grab; user-select: none; border-bottom: 1px solid #eaeaea;
+}
+.pane .title .name { font-weight: 600; }
+.pane .title .btns button { margin-left: 6px; }
+.pane .body {
+  height: calc(100% - 36px);
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  padding: 8px;
+  white-space: pre-wrap;
+  line-height: 1.2;
+}
+.pane .resizer {
+  position: absolute; width: 12px; height: 12px; right: 0; bottom: 0; cursor: se-resize; background: transparent;
+}
+.pane.active { outline: 2px solid #4A90E2; }
+.pane.hidden { display: none; }
+
+/* ===== 底部功能区 ===== */
+#bottomPanel {
+  grid-area: controlBar;
+  display: flex;
+  height: 180px;
+  border-top: 1px solid #ddd;
+  background: #fff;
+}
+
+/* 左侧垂直导航 */
+#bottomNav {
+  width: 50px;
+  border-right: 1px solid #ddd;
+  display: flex;
+  flex-direction: column;
+}
+#bottomNav button {
+  flex: 1; border: none; border-bottom: 1px solid #eee; background: #f8f8f8; cursor: pointer;
+}
+#bottomNav button:hover { background: #e6e6e6; }
+#bottomNav button.active { background: #4A90E2; color: #fff; font-weight: 700; }
+
+/* 右侧内容区（注意：不出现滚动条） */
+#bottomContent {
+  flex: 1;
+  padding: 10px 10px 14px;     /* 👈 这里下内边距更大，保证底部留白 */
+  overflow: hidden;            /* 不出现滚动条 */
+  display: flex;
+  flex-direction: column;
+}
+
+#bottomContent .row {
+  display: flex; align-items: center; gap: 8px; margin-bottom: 8px;
+}
+
+#toggleSidebar { width: 32px; height: 28px; }
+
+dialog { border: 1px solid #ddd; border-radius: 8px; padding: 12px 12px 16px; }
+
+/* ===== 命令页 ===== */
+.cmd-layout {
+  display: grid;
+  grid-template-columns: 1fr 120px; /* 左：网格；右：工具栏 */
+  gap: 10px;
+  height: 100%;
+  padding-bottom: 12px;      /* 👈 整体底部再留白 */
+  box-sizing: border-box;
+}
+
+/* 使用 flex，固定行高、宽度自适应 */
+.cmd-grid {
+  height: calc(100% - 0px);  /* 与上面的 padding 配合，确保可见空白 */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px 8px 16px;     /* 👈 网格自身也有下内边距 */
+  overflow: hidden;          /* 不出现滚动条 */
+  align-content: flex-start; /* 从上往下排 */
+}
+
+/* 卡片：固定高度，宽度 flex */
+.cmd-card {
+  display: flex;
+  align-items: center;
+  height: 31px;              /* 👈 固定高度更窄 */
+  flex: 1 1 300px;           /* 最小 ~300px，宽度自适应 */
+  max-width: 420px;          /* 避免太宽 */
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 4px;
+  background: #fff;
+  font-size: 13px;
+}
+/* 让按钮里的文字真正几何居中 */
+.cmd-card button.send {
+  /* 尺寸 */
+  height: 100%;
+  flex: 0 0 80px;
+
+  /* 用 flex 居中，避免字体度量带来的“看起来不居中” */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  /* 去掉上下 padding，避免再影响视觉重心 */
+  padding: 0 10px;
+
+  /* 行盒高度不再参与垂直对齐 */
+  line-height: 1;
+
+  font-size: 13px;
+}
+
+/* （可选）统一 UI 字体，CJK 度量更一致 */
+body, button, input, select {
+  font-family: "Microsoft YaHei UI", "Microsoft YaHei",
+               "PingFang SC", "Noto Sans SC", "Segoe UI",
+               Arial, sans-serif;
+}
+
+.cmd-card .preview {
+  flex: 1;
+  height: 100%;
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  padding: 0 6px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 占位卡片：占位置但不可见，用于不足一页时对齐 */
+.cmd-card.placeholder { visibility: hidden; }
+
+.cmd-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 8px 8px 16px;  /* 顶部 8px，与 .cmd-grid 一致 */
+}
+.cmd-tools .pager { display: flex; justify-content: center; gap: 6px; }
+.cmd-tools .repeat { display: flex; align-items: center; gap: 6px; }
+.cmd-tools input[type="number"] { width: 80px; }
+.cmd-table-wrap { max-height: 420px; overflow: auto; margin: 8px 0; }
+.cmd-table { width: 720px; border-collapse: collapse; }
+.cmd-table th, .cmd-table td { border: 1px solid #e6e6e6; padding: 6px; }
+.cmd-edit-actions { display: flex; gap: 8px; }
+
+/* 自动发送状态：蓝色发光边框 */
+.cmd-card.auto {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 2px rgba(59,130,246,.35), 0 0 10px rgba(59,130,246,.25);
+  animation: pulse-blue 1.2s ease-in-out infinite;
+}
+
+@keyframes pulse-blue {
+  0%   { box-shadow: 0 0 0 2px rgba(59,130,246,.35), 0 0 8px  rgba(59,130,246,.20); }
+  50%  { box-shadow: 0 0 0 2px rgba(59,130,246,.75), 0 0 16px rgba(59,130,246,.45); }
+  100% { box-shadow: 0 0 0 2px rgba(59,130,246,.35), 0 0 8px  rgba(59,130,246,.20); }
+}
+
+/* 统一 About 页与其他页的上边距 */
+#page-about h3 {
+  margin-top: 0;
+}
+/* 脚本工作室布局 */
+.script-layout {
+  width: 920px; height: 520px;
+  display: grid; grid-template-columns: 1fr 280px; gap: 12px;
+}
+#scriptEditor {
+  width: 100%; height: 100%;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-size: 13px; line-height: 1.4;
+  border: 1px solid #ddd; border-radius: 8px; padding: 10px;
+  resize: none;
+  overflow: auto;
+}
+.script-side {
+  display: flex; flex-direction: column;
+}
+.script-row { display: flex; gap: 8px; margin-bottom: 8px; }
+#scriptName { flex: 1; }
+.script-list-wrap {
+  border: 1px solid #eee; border-radius: 8px; padding: 8px; height: 280px; overflow: auto;
+}
+#scriptList { list-style: none; margin: 0; padding: 0; }
+#scriptList li {
+  padding: 6px 8px; border-radius: 6px; cursor: pointer;
+}
+#scriptList li:hover { background: #f3f6ff; }
+.script-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.hint { font-size: 12px; color: #666; margin-bottom: 6px; word-break: break-all; }
+/* 顶部三按钮一行显示 */
+.script-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.script-row > button {
+  flex: 1;
+}
+.pane.dragging { cursor: grabbing !important; user-select: none; }
+.pane.dragging .title { user-select: none; }
+.pane.dragging .btns button { pointer-events: none; }
+.pane { z-index: 1; }
+.pane.active,
+.pane.dragging { z-index: 9; }

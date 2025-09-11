@@ -1,0 +1,70 @@
+{
+  "name": "SAEcom",
+  "version": "0.1.1",
+  "description": "串口助手",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electronmon .",
+    "postinstall": "electron-builder install-app-deps",
+    "rebuild": "electron-rebuild -f -w serialport",
+    "pack": "electron-builder --dir",
+    "dist": "electron-builder",
+    "dist:win": "electron-builder --win nsis",
+    "dist:mac": "electron-builder --mac dmg",
+    "dist:mac:universal": "electron-builder --mac universal"
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.3.0",
+    "electron-builder": "^26.0.12",
+    "electronmon": "^2.0.3",
+    "@electron/rebuild": "^3.6.0"
+  },
+  "build": {
+    "appId": "com.example.serialhelper",
+    "productName": "串口助手",
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "files": [
+      "**/*",
+      "!**/*.map",
+      "!**/test{,s}/**",
+      "!**/__tests__/**",
+      "!**/*.md",
+      "!node_modules/.cache/**"
+    ],
+    "asar": true,
+    "asarUnpack": ["**/*.node"],
+
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": ["dmg", "zip"],
+      "hardenedRuntime": true,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
+      "gatekeeperAssess": false,
+      "icon": "build/icon.icns",
+      "artifactName": "${productName}-${version}-mac-${arch}.${ext}"
+    },
+    "dmg": {
+      "icon": "build/icon.icns"
+    },
+
+    "win": {
+      "target": [
+        { "target": "nsis", "arch": ["x64", "ia32"] }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-win-${arch}.${ext}"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
