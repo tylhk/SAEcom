@@ -28,9 +28,9 @@ window.api.serial.onData(({ id, bytes }) => {
                     + `${pad(ts.getMilliseconds(),3)}`;
     try {
       const txt = new TextDecoder().decode(bytes);
-      displayEl.innerHTML += `[${timestamp}]\n${txt}\n`;
+      displayEl.innerHTML += `[${timestamp}]\n${escHtml(txt)}\n`;
     } catch {
-      displayEl.innerHTML += `[${timestamp}]\n${Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' ')}\n`;
+      displayEl.innerHTML += `[${timestamp}]\n${escHtml(Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' '))}\n`;
     }
     displayEl.scrollTop = displayEl.scrollHeight;
 });

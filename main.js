@@ -1,18 +1,15 @@
-// main.js
 const { app, BrowserWindow, ipcMain, shell } = require('electron');
 const path = require('path');
 const { SerialPort } = require('serialport');
 const fs = require('fs');
 const vm = require('vm');
 const { dialog } = require('electron');
-const { randomUUID } = require('crypto'); 
+const { randomUUID } = require('crypto');
 const runningScripts = new Map();
-// ===== 配置文件路径 =====
 const configPath = path.join(app.getPath('userData'), 'panels.json');
 const commandsPath = path.join(app.getPath('userData'), 'commands.json');
 const scriptsDir = path.join(app.getPath('userData'), 'scripts');
 
-// ===== JSON 工具函数 =====
 function loadJsonSafe(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return fallback; }
 }
@@ -20,21 +17,18 @@ function saveJsonSafe(file, data) {
   try { fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8'); } catch (err) { console.error('保存失败:', err); }
 }
 
-// ===== 配置文件操作 =====
 function loadPanelsConfig() { return loadJsonSafe(configPath, []); }
 function savePanelsConfig(panels) { saveJsonSafe(configPath, panels); }
 
 function loadCommandsConfig() { return loadJsonSafe(commandsPath, []); }
 function saveCommandsConfig(cmds) { saveJsonSafe(commandsPath, cmds); }
 
-function ensureScriptsDir() { try { fs.mkdirSync(scriptsDir, { recursive: true }); } catch {} }
+function ensureScriptsDir() { try { fs.mkdirSync(scriptsDir, { recursive: true }); } catch { } }
 
-// ===== 串口管理 =====
 const ports = new Map();
 let mainWindow = null;
 const getPortId = (portPath) => portPath;
 
-// ===== 创建主窗口 =====
 function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -58,7 +52,6 @@ function createMainWindow() {
     mainWindow = null;
   });
 
-  // 外部链接统一交给系统默认浏览器/邮件客户端
   const openExternalIfNeeded = (url) => {
     if (/^https?:/i.test(url) || /^mailto:/i.test(url)) {
       shell.openExternal(url);
@@ -75,14 +68,12 @@ function createMainWindow() {
   });
 }
 
-// ===== IPC：配置文件 =====
 ipcMain.handle('config:load', () => loadPanelsConfig());
 ipcMain.on('config:save', (_e, panels) => savePanelsConfig(panels));
 
 ipcMain.handle('commands:load', () => loadCommandsConfig());
 ipcMain.on('commands:save', (_e, cmds) => saveCommandsConfig(cmds));
 
-// ===== IPC：文件读取为 hex（用于发送文件） =====
 ipcMain.handle('file:readHex', async (_e, filePath) => {
   try {
     const buf = fs.readFileSync(filePath);
@@ -92,21 +83,20 @@ ipcMain.handle('file:readHex', async (_e, filePath) => {
   }
 });
 
-// ===== 串口 IPC =====
 ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
-    const { canceled, filePath } = await dialog.showSaveDialog({
-      title: '保存面板数据',
-      defaultPath: `${name || 'panel'}.txt`,
-      filters: [{ name: '文本文件', extensions: ['txt'] }]
-    });
-    if (canceled || !filePath) return { ok: false, canceled: true };
-    try {
-      fs.writeFileSync(filePath, content, 'utf-8');
-      return { ok: true, filePath };
-    } catch (err) {
-      return { ok: false, error: err.message };
-    }
+  const { canceled, filePath } = await dialog.showSaveDialog({
+    title: '保存面板数据',
+    defaultPath: `${name || 'panel'}.txt`,
+    filters: [{ name: '文本文件', extensions: ['txt'] }]
   });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try {
+    fs.writeFileSync(filePath, content, 'utf-8');
+    return { ok: true, filePath };
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+});
 
 ipcMain.handle('serial:list', async () => {
   const list = await SerialPort.list();
@@ -166,7 +156,6 @@ ipcMain.handle('serial:close', async (_e, { id }) => {
   });
 });
 
-// ===== 串口写数据（通用函数，脚本也用它） =====
 function buildWriteBuffer(data, mode, append) {
   let payload = data || '';
   if (append === 'CR') payload += '\r';
@@ -184,7 +173,7 @@ function buildWriteBuffer(data, mode, append) {
     return Buffer.from(payload, 'utf8');
   }
 }
-function writeToSerial(id, data, mode='text', append='none') {
+function writeToSerial(id, data, mode = 'text', append = 'none') {
   const entry = ports.get(id);
   if (!entry) return Promise.resolve({ ok: false, error: 'PORT_NOT_OPEN' });
   let buf;
@@ -201,13 +190,12 @@ ipcMain.handle('serial:write', async (_e, { id, data, mode, append }) => {
   return writeToSerial(id, data, mode, append);
 });
 ipcMain.handle('scripts:stop', (_e, { runId }) => {
-    const token = runningScripts.get(runId);
-    if (!token) return { ok: false, error: 'NOT_RUNNING' };
-    token.aborted = true;  // 挂起中的 sleep 将在到点时以 ABORTED 结束
-    return { ok: true };
-  });
-  
-// ===== 面板弹出相关 =====
+  const token = runningScripts.get(runId);
+  if (!token) return { ok: false, error: 'NOT_RUNNING' };
+  token.aborted = true;
+  return { ok: true };
+});
+
 ipcMain.handle('panel:popout', (_e, { id, title, html }) => {
   if (!mainWindow) return { ok: false, error: 'MAIN_WINDOW_MISSING' };
   const win = new BrowserWindow({
@@ -234,7 +222,6 @@ ipcMain.on('panel:request-dock', (_e, { id, html }) => {
   if (mainWindow) mainWindow.webContents.send('panel:dock', { id, html });
 });
 
-// ===== 脚本相关 IPC =====
 function safeScriptName(name) {
   name = String(name || '').trim();
   name = name.replace(/[/\\]/g, '');
@@ -262,51 +249,48 @@ ipcMain.handle('scripts:delete', (_e, name) => {
   return { ok: true };
 });
 ipcMain.handle('scripts:run', (e, { code, ctx }) => {
-    const runId = randomUUID();
-    const logs = [];
-  
-    const token = { aborted: false, timers: new Set() };
-    runningScripts.set(runId, token);
-  
-    const sandbox = {
-      console: { log: (...args) => logs.push(args.map(String).join(' ')) },
-      sleep: (ms) => new Promise((resolve, reject) => {
-        const t = setTimeout(() => {
-          if (token.aborted) return reject(new Error('ABORTED'));
-          resolve();
-        }, Number(ms) || 0);
-        token.timers.add(t);
-      }),
-      send: async (data, mode='text', append='none') => {
-        if (token.aborted) throw new Error('ABORTED');
-        const res = await writeToSerial(ctx.id, data, mode, append);
-        if (!res.ok) throw new Error(res.error);
-        return res;
-      },
-      shouldStop: () => token.aborted,
-    };
-  
-    // 后台启动，不阻塞 IPC；结束后发事件通知渲染进程
-    (async () => {
-      try {
-        const script = new vm.Script(`(async () => { ${code || ''} })()`);
-        const context = vm.createContext(sandbox);
-        await script.runInContext(context); // 注意：timeout 只限同步代码
-        e.sender.send('scripts:ended', { runId, ok: true, logs });
-      } catch (err) {
-        logs.push('[ERROR] ' + (err?.message || String(err)));
-        e.sender.send('scripts:ended', { runId, ok: false, error: err?.message, logs });
-      } finally {
-        token.timers.forEach(clearTimeout);
-        runningScripts.delete(runId);
-      }
-    })();
-  
-    return { ok: true, runId };  // 立刻返回 runId
-  });
-  
+  const runId = randomUUID();
+  const logs = [];
 
-// ===== 应用启动与退出 =====
+  const token = { aborted: false, timers: new Set() };
+  runningScripts.set(runId, token);
+
+  const sandbox = {
+    console: { log: (...args) => logs.push(args.map(String).join(' ')) },
+    sleep: (ms) => new Promise((resolve, reject) => {
+      const t = setTimeout(() => {
+        if (token.aborted) return reject(new Error('ABORTED'));
+        resolve();
+      }, Number(ms) || 0);
+      token.timers.add(t);
+    }),
+    send: async (data, mode = 'text', append = 'none') => {
+      if (token.aborted) throw new Error('ABORTED');
+      const res = await writeToSerial(ctx.id, data, mode, append);
+      if (!res.ok) throw new Error(res.error);
+      return res;
+    },
+    shouldStop: () => token.aborted,
+  };
+
+  (async () => {
+    try {
+      const script = new vm.Script(`(async () => { ${code || ''} })()`);
+      const context = vm.createContext(sandbox);
+      await script.runInContext(context);
+      e.sender.send('scripts:ended', { runId, ok: true, logs });
+    } catch (err) {
+      logs.push('[ERROR] ' + (err?.message || String(err)));
+      e.sender.send('scripts:ended', { runId, ok: false, error: err?.message, logs });
+    } finally {
+      token.timers.forEach(clearTimeout);
+      runningScripts.delete(runId);
+    } 
+  })();
+
+  return { ok: true, runId };
+});
+
 app.whenReady().then(() => {
   ensureScriptsDir();
   createMainWindow();
@@ -314,6 +298,6 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', () => {
-  ports.forEach(({ port }) => { try { port.close(); } catch {} });
+  ports.forEach(({ port }) => { try { port.close(); } catch { } });
   if (process.platform !== 'darwin') app.quit();
 });

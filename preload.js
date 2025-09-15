@@ -1,4 +1,3 @@
-// preload.js
 const { contextBridge, ipcRenderer } = require('electron');
 const { shell } = require('electron');
 
@@ -40,12 +39,12 @@ contextBridge.exposeInMainWorld('api', {
     load: () => ipcRenderer.invoke('config:load'),
     save: (panels) => ipcRenderer.send('config:save', panels)
   },
-  // ✅ 命令配置
+  // 命令配置
   commands: {
     load: () => ipcRenderer.invoke('commands:load'),
     save: (cmds) => ipcRenderer.send('commands:save', cmds)
   },
-  // ✅ 文件读取
+  // 文件读取
   file: {
     readHex: (filePath) => ipcRenderer.invoke('file:readHex', filePath)
   },

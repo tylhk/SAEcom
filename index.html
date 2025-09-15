@@ -9,7 +9,6 @@
 
 <body>
     <div id="app">
-        <!-- 左侧菜单栏 -->
         <aside id="sidebar" class="open">
             <div class="sidebar-header">
                 <button id="toggleSidebar">≡</button>
@@ -20,25 +19,24 @@
                 <button id="btnRefreshPorts">刷新串口</button>
             </div>
             <ul id="panelList"></ul>
+            <div class="sidebar-footer">
+                <button id="btnSettings">设置</button>
+            </div>
+
         </aside>
 
-        <!-- 主工作区 -->
         <main id="workspace">
             <div id="panes"></div>
         </main>
 
-        <!-- 底部功能区 -->
         <div id="bottomPanel">
-            <!-- 左边按钮区 -->
             <div id="bottomNav">
                 <button data-page="serial">串口</button>
                 <button data-page="commands">命令</button>
                 <button data-page="about">关于</button>
             </div>
 
-            <!-- 右边内容区 -->
             <div id="bottomContent">
-                <!-- 串口页 -->
                 <div class="page" id="page-serial">
                     <div class="row">
                         <label>当前面板：</label>
@@ -100,10 +98,9 @@
                     </div>
                 </div>
 
-                <!-- ✅ 命令页 -->
                 <div class="page" id="page-commands" style="display:none">
                     <div class="cmd-layout">
-                        <div id="cmdGrid" class="cmd-grid"><!-- 卡片在这里渲染 --></div>
+                        <div id="cmdGrid" class="cmd-grid"></div>
                         <div id="cmdTools" class="cmd-tools">
                             <div class="pager">
                                 <button id="cmdPrev" title="上一页">◀</button>
@@ -122,7 +119,6 @@
                     </div>
                 </div>
 
-                <!-- 关于页 -->
                 <div class="page" id="page-about" style="display:none">
                     <h3>About</h3>
                     <p>作者：Satone</p>
@@ -145,7 +141,6 @@
             </div>
         </div>
 
-        <!-- 新建面板对话框 -->
         <dialog id="dlgNew">
             <h3>选择串口并创建面板</h3>
             <div><select id="dlgPortList" style="width:100%"></select></div>
@@ -155,7 +150,6 @@
             </div>
         </dialog>
 
-        <!-- ✅ 命令编辑对话框 -->
         <dialog id="dlgCmdEdit">
             <h3>编辑命令（全局）</h3>
             <div class="cmd-table-wrap">
@@ -178,9 +172,9 @@
                 <button id="cmdSave">保存</button>
             </div>
         </dialog>
-        <!-- ✅ 脚本工作室对话框 -->
+
         <dialog id="dlgScript">
-            <h3>脚本工作室</h3>
+            <h3>脚本页</h3>
             <div class="script-layout">
                 <textarea id="scriptEditor" placeholder="在此编写脚本（.js）" spellcheck="false"></textarea>
 
@@ -204,7 +198,7 @@
                 </div>
             </div>
         </dialog>
-        <!-- ✅ 新增：脚本命名对话框 -->
+
         <dialog id="dlgScriptName">
             <h4>新建脚本</h4>
             <div style="display:flex;gap:8px;align-items:center;">
@@ -214,6 +208,27 @@
             <div style="margin-top:10px;text-align:right;">
                 <button id="scriptNameCancel">取消</button>
                 <button id="scriptNameOk">确定</button>
+            </div>
+        </dialog>
+        <!-- 设置对话框 -->
+        <dialog id="dlgSettings">
+            <div class="dlg">
+                <div class="dlg-header">
+                    <div class="dlg-title">设置</div>
+                    <button class="dlg-close" id="settingsClose">×</button>
+                </div>
+                <div class="dlg-body">
+                    <div class="setting-item">
+                        <div class="setting-label">关闭音量</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="muteToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="dlg-footer">
+                    <button id="settingsOk">确定</button>
+                </div>
             </div>
         </dialog>
 

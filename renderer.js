@@ -1,4 +1,3 @@
-// renderer.js
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 
@@ -6,6 +5,10 @@ const panesEl = $('#panes');
 const panelListEl = $('#panelList');
 const toggleSidebarBtn = $('#toggleSidebar');
 const sidebarEl = $('#sidebar');
+const btnSettings = document.getElementById('btnSettings');
+const dlgSettings = document.getElementById('dlgSettings');
+const settingsClose = document.getElementById('settingsClose');
+const settingsOk = document.getElementById('settingsOk');
 
 const btnNew = $('#btnNew');
 const btnRefreshPorts = $('#btnRefreshPorts');
@@ -13,7 +16,6 @@ const btnScriptStop = $('#btnScriptStop');
 let currentRunId = null;
 const SIDEBAR_COLLAPSED_W = 50;
 const LEFT_GUTTER = 12;
-// 串口控制区
 const activeLabel = $('#activePanelLabel');
 const selPort = $('#selPort');
 const baud = $('#baud');
@@ -26,13 +28,11 @@ const appendSel = $('#append');
 const bufferInput = $('#bufferTime');
 const btnSend = $('#btnSend');
 
-// 新建面板对话框
 const dlgNew = $('#dlgNew');
 const dlgPortList = $('#dlgPortList');
 const dlgCreate = $('#dlgCreate');
 const dlgCancel = $('#dlgCancel');
 
-// 发送文件
 const fileNameInput = $('#fileName');
 const fileChooser = $('#fileChooser');
 const btnChooseFile = $('#btnChooseFile');
@@ -52,20 +52,20 @@ const cmdAdd = $('#cmdAdd');
 const cmdCancel = $('#cmdCancel');
 const cmdSave = $('#cmdSave');
 
-// ===== 脚本工作室 =====
+// ===== 脚本 =====
 const openScriptBtn = $('#openScript');
 const dlgScript = $('#dlgScript');
 const scriptEditor = $('#scriptEditor');
 const scriptList = $('#scriptList');
 const btnScriptNew = $('#btnScriptNew');
 const currentScriptNameEl = $('#currentScriptName');
-let currentScript = '';  // 当前文件名（如 xxx.js）
+let currentScript = '';
 const scriptDirHint = $('#scriptDirHint');
 const btnScriptSave = $('#btnScriptSave');
 const btnScriptDelete = $('#btnScriptDelete');
 const btnScriptRun = $('#btnScriptRun');
 const btnScriptClose = $('#btnScriptClose');
-// 示例脚本模板：每 1000ms 发送随机 10 位字符串
+// 示例脚本模板
 const DEFAULT_SCRIPT_TEMPLATE = `// 示例：每 1000ms 通过串口发送随机 10 位字符串
 function rand(n = 10) {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
@@ -82,7 +82,6 @@ while (true) {
 // 这类基于 await 的脚本不会自动停止，请用“停止运行”按钮终止。
 `;
 
-// ✅ 命名对话框元素（若 HTML 中不存在，会自动回退到 prompt）
 const dlgScriptName = $('#dlgScriptName');
 const scriptNameInput = $('#scriptNameInput');
 const scriptNameOk = $('#scriptNameOk');
@@ -136,7 +135,15 @@ function exportPanelsConfig() {
     }));
 }
 
-/* ========== 脚本：工具函数 ========== */
+function escHtml(s) {
+    return String(s)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+
+/* ===== 脚本 ===== */
 
 // 统一刷新脚本列表
 async function refreshScriptList() {
@@ -152,7 +159,6 @@ async function refreshScriptList() {
             currentScript = name;
             currentScriptNameEl.textContent = name;
 
-            // 只用 readOnly 管控，避免 disabled 带来的不可编辑
             scriptEditor.readOnly = false;
             scriptEditor.value = code || '';
             scriptEditor.focus();
@@ -165,20 +171,17 @@ async function refreshScriptList() {
 function showTempStatus(text) {
     const old = currentScriptNameEl.textContent;
     currentScriptNameEl.textContent = (old || '') + `（${text}）`;
-    setTimeout(() => { currentScriptNameEl.textContent = currentScript || '（未命名）'; }, 1200);
+    setTimeout(() => { currentScriptNameEl.textContent = currentScript || '（未选择）'; }, 1200);
 }
 
-// 统一的命名输入（优先用自定义 <dialog>，否则回退 prompt）
 function askScriptName(defaultBase = '新脚本') {
     return new Promise((resolve) => {
-        // 没有命名对话框，回退到 prompt
         if (!dlgScriptName || !scriptNameInput || !scriptNameOk || !scriptNameCancel) {
             const input = prompt('输入脚本名称（无需后缀）', defaultBase) || '';
             if (!input.trim()) return resolve('');
             return resolve(input.endsWith('.js') ? input : `${input}.js`);
         }
 
-        // 用自定义对话框
         scriptNameInput.value = defaultBase;
         dlgScriptName.showModal();
 
@@ -197,20 +200,21 @@ function askScriptName(defaultBase = '新脚本') {
     });
 }
 
-/* ========== 脚本：事件绑定 ========== */
+/* ==== 脚本：事件绑定 ==== */
+btnSettings.addEventListener('click', () => dlgSettings.showModal());
+settingsClose.addEventListener('click', () => dlgSettings.close());
+settingsOk.addEventListener('click', () => dlgSettings.close());
 
 btnScriptNew.addEventListener('click', async () => {
     const name = await askScriptName('新脚本');
     if (!name) return;
 
-    // 用模板内容创建
     await window.api.scripts.write(name, DEFAULT_SCRIPT_TEMPLATE);
     await refreshScriptList();
 
     currentScript = name;
     currentScriptNameEl.textContent = name;
 
-    // 填充编辑器并保持可编辑
     scriptEditor.readOnly = false;
     scriptEditor.value = DEFAULT_SCRIPT_TEMPLATE;
     scriptEditor.focus();
@@ -227,7 +231,6 @@ openScriptBtn.addEventListener('click', async () => {
 });
 
 btnScriptSave.addEventListener('click', async () => {
-    // 首次保存需要命名
     if (!currentScript) {
         const name = await askScriptName('新脚本');
         if (!name) return;
@@ -238,7 +241,6 @@ btnScriptSave.addEventListener('click', async () => {
     await refreshScriptList();
     currentScriptNameEl.textContent = currentScript;
 
-    // 保存后仍可继续编辑
     scriptEditor.readOnly = false;
     scriptEditor.focus();
     showTempStatus('已保存');
@@ -253,7 +255,7 @@ btnScriptDelete.addEventListener('click', async () => {
 
     currentScript = '';
     currentScriptNameEl.textContent = '（未命名）';
-    scriptEditor.readOnly = false;   // 删除后依然可编辑（变成“新稿”）
+    scriptEditor.readOnly = false;
     scriptEditor.value = '';
 });
 
@@ -274,10 +276,9 @@ btnScriptStop.addEventListener('click', async () => {
     if (!currentRunId) return;
     const { ok, error } = await window.api.scripts.stop(currentRunId);
     if (!ok) alert('停止失败：' + (error || '未知错误'));
-    // 等待 main.js 发来的 scripts:ended 事件来真正复位按钮
 });
 window.api.scripts.onEnded(({ runId, ok, error, logs }) => {
-    if (currentRunId && runId !== currentRunId) return; // 非当前任务忽略
+    if (currentRunId && runId !== currentRunId) return;
     currentRunId = null;
     btnScriptRun.disabled = false;
     btnScriptStop.disabled = true;
@@ -285,7 +286,6 @@ window.api.scripts.onEnded(({ runId, ok, error, logs }) => {
     if (ok) {
         alert((logs || []).join('\n') || '脚本运行结束');
     } else {
-        // 若是停止，error 会是 ABORTED
         const msg = (error === 'ABORTED') ? '已停止脚本' : ('脚本运行失败：' + error);
         alert(msg + (logs?.length ? '\n' + logs.join('\n') : ''));
     }
@@ -293,7 +293,7 @@ window.api.scripts.onEnded(({ runId, ok, error, logs }) => {
 
 btnScriptClose.addEventListener('click', () => dlgScript.close());
 
-/* ========== 通用 ========== */
+/* ==== 通用 ==== */
 
 function nowTs() {
     const d = new Date();
@@ -303,7 +303,7 @@ function nowTs() {
         + `${pad(d.getMilliseconds(), 3)}`;
 }
 
-// 串口回显（受“回显”复选框控制）
+// 串口回显
 function echoIfEnabled(id, text) {
     const echo = $('#echoSend');
     if (!echo || !echo.checked) return;
@@ -311,7 +311,7 @@ function echoIfEnabled(id, text) {
     if (!pane) return;
     const body = pane.el.querySelector('.body');
     const ts = nowTs();
-    body.innerHTML += `<span style="color:red">[${ts}]\n${text}\n</span>`;
+    body.innerHTML += `<span style="color:red">[${ts}]\n${escHtml(text)}\n</span>`;
     body.scrollTop = body.scrollHeight;
 }
 
@@ -346,7 +346,7 @@ function fillPortSelect(activeId) {
     }
 }
 
-// ===== 面板创建 =====
+// ==== 面板创建 ====
 function createPane(portPath, name) {
     const id = portPath;
     if (state.panes.has(id)) {
@@ -356,25 +356,21 @@ function createPane(portPath, name) {
     }
     const el = document.createElement('div');
     el.className = 'pane';
-    // ===== 初始位置：靠右侧，避开左侧菜单 =====
     const ws = document.getElementById('workspace');
-    const sideW = sidebarEl ? sidebarEl.offsetWidth : 0; // 左侧菜单当前宽度（50 或 260）
+    const sideW = sidebarEl ? sidebarEl.offsetWidth : 0;
     const margin = 16;
 
-    // 默认尺寸（和 CSS 保持一致）
     const paneW = 420;
     const paneH = 240;
 
-    // 计算边界
     const wsW = ws.clientWidth;
     const wsH = ws.clientHeight;
-    const leftMin = sideW + margin;                  // 避开菜单再留点边距
+    const leftMin = sideW + margin;
     const leftMax = Math.max(leftMin, wsW - paneW - margin);
     const topMin = margin;
     const topMax = Math.max(topMin, wsH - paneH - margin);
 
-    // 放在“靠右”的位置，垂直位置给一点随机
-    const initLeft = leftMax;                        // 直接靠右
+    const initLeft = leftMax;
     const initTop = Math.min(topMax, topMin + Math.floor(Math.random() * 120));
 
     el.style.left = `${initLeft}px`;
@@ -606,40 +602,78 @@ function refreshPanelList() {
     panelListEl.innerHTML = '';
     state.panes.forEach((pane, id) => {
         const li = document.createElement('li');
+        li.className = 'port-row'; // ← 给样式用
 
-        const title = document.createElement('span');
-        title.textContent = pane.info.name + (pane.open ? ' ✅' : ' ⏹');
-        title.style.cursor = 'pointer';
-        title.onclick = () => { pane.el.classList.remove('hidden'); setActive(id); };
+        // 1) 状态图标（可点击）
+        const statusBtn = document.createElement('button');
+        statusBtn.className = 'port-status ' + (pane.open ? 'open' : 'closed');
+        statusBtn.title = pane.open ? '关闭串口' : '打开串口';
+        statusBtn.onclick = async (e) => {
+            e.stopPropagation();
+            const p = state.panes.get(id);
+            if (!p) return;
 
+            if (p.open) {
+                await window.api.serial.close(id);
+                p.open = false;
+            } else {
+                // 用底部当前参数打开
+                p.options = {
+                    baudRate: parseInt(baud.value, 10),
+                    dataBits: parseInt(databits.value, 10),
+                    stopBits: parseInt(stopbits.value, 10),
+                    parity: parity.value
+                };
+                const res = await window.api.serial.open(p.info.path, p.options);
+                if (!res.ok) return alert('打开失败：' + res.error);
+                p.open = true;
+            }
+            // 同步面板按钮文案
+            const btnToggle = p.el.querySelector('.btnToggle');
+            if (btnToggle) btnToggle.textContent = p.open ? '关闭串口' : '打开串口';
+
+            refreshPanelList();
+            window.api.config.save(exportPanelsConfig());
+        };
+
+        // 2) 名称（可点击激活）
+        const nameEl = document.createElement('span');
+        nameEl.className = 'port-name';
+        nameEl.textContent = pane.info.name || id;
+        nameEl.title = pane.info.name || id;
+        nameEl.onclick = () => { pane.el.classList.remove('hidden'); setActive(id); };
+
+        // 3) 右侧操作（清空 / 删除）
         const act = document.createElement('div');
         act.className = 'actions';
 
-        // 清空
-        const bClear = document.createElement('button'); bClear.textContent = '清空';
+        const bClear = document.createElement('button');
+        bClear.textContent = '清空';
         bClear.onclick = () => {
             if (!confirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`)) return;
             const body = pane.el.querySelector('.body');
             body.innerHTML = '';
             pane.logs = [];
         };
-        act.append(bClear);
 
-        // 删除
-        const bDel = document.createElement('button'); bDel.textContent = '删除';
+        const bDel = document.createElement('button');
+        bDel.textContent = '删除';
         bDel.onclick = async () => {
             if (!confirm(`确定要删除面板 “${pane.info.name}” 吗？`)) return;
             await window.api.serial.close(id);
-            pane.el.remove(); state.panes.delete(id); refreshPanelList();
+            pane.el.remove();
+            state.panes.delete(id);
+            refreshPanelList();
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
         };
-        act.append(bDel);
 
-        li.append(title, act);
+        act.append(bClear, bDel);
+        li.append(statusBtn, nameEl, act);
         panelListEl.appendChild(li);
     });
 }
+
 
 // ===== 数据接收渲染 =====
 function formatBytes(bytes, mode = 'text') {
@@ -675,7 +709,7 @@ function showData(id, bytes) {
 
     const body = pane.el.querySelector('.body');
     const dataStr = formatBytes(bytes, pane.viewMode);
-    body.innerHTML += `[${ts}]\n${dataStr}\n`;
+    body.innerHTML += `[${ts}]\n${escHtml(dataStr)}\n`;
     body.scrollTop = body.scrollHeight;
 }
 
@@ -686,7 +720,7 @@ function redrawPane(id) {
     body.innerHTML = '';
     pane.logs.forEach(log => {
         const dataStr = formatBytes(log.bytes, pane.viewMode);
-        body.innerHTML += `[${log.ts}]\n${dataStr}\n`;
+        body.innerHTML += `[${log.ts}]\n${escHtml(dataStr)}\n`;
     });
     body.scrollTop = body.scrollHeight;
 }
@@ -781,7 +815,6 @@ function attachOptionListeners() {
 }
 attachOptionListeners();
 
-// 缓冲输入只允许数字，步进1
 bufferInput.addEventListener('keydown', (e) => {
     const allow = new Set(['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'Home', 'End', 'Enter']);
     if (allow.has(e.key)) return;
@@ -837,18 +870,24 @@ btnSendFile.addEventListener('click', async () => {
         alert('文件处理异常：' + e.message);
     }
 });
-// 禁止文件被拖到其他输入框
-document.addEventListener('dragover', (e) => { if (e.target !== fileNameInput) e.preventDefault(); });
-document.addEventListener('drop', (e) => { if (e.target !== fileNameInput) e.preventDefault(); });
+function isDraggingFiles(e) {
+    const types = Array.from(e.dataTransfer?.types || []);
+    return types.includes('Files');
+}
+document.addEventListener('dragover', (e) => {
+    if (isDraggingFiles(e) && e.target !== fileNameInput) e.preventDefault();
+});
+document.addEventListener('drop', (e) => {
+    if (isDraggingFiles(e) && e.target !== fileNameInput) e.preventDefault();
+});
 
 // ===== 命令页 =====
 
-// 计算网格布局（固定4行，列数按可用宽度估算）
 function calcCmdLayout() {
     const grid = cmdGrid.getBoundingClientRect();
-    const colW = 300;              // 每列最小宽度
+    const colW = 300;
     const cols = Math.max(1, Math.floor(grid.width / (colW + 8)));
-    const rows = 4;                // 固定显示 4 行
+    const rows = 4;
     state.cmdCols = cols;
     state.cmdRows = rows;
 }
@@ -880,7 +919,7 @@ function buildPreview(cmd) {
 
         const finish = () => {
             cmd.data = input.value;
-            const nextPrev = buildPreview(cmd); // 重新生成带新闭包的预览
+            const nextPrev = buildPreview(cmd);
             input.replaceWith(nextPrev);
             saveCommands();
         };
@@ -912,18 +951,13 @@ function renderCmdGrid() {
         btn.className = 'send';
         btn.textContent = cmd.name || '(未命名)';
         btn.title = '点击发送';
-        btn.onclick = () => sendCommand(cmd, card);   // 传 card 以做动效
-
+        btn.onclick = () => sendCommand(cmd, card);
         const prev = buildPreview(cmd);
-
-        // 若该命令在自动发送，进入页面时加上动效态
         if (state.cmdIntervalMap.has(cmd.id)) card.classList.add('auto');
-
         card.append(btn, prev);
         cmdGrid.appendChild(card);
     });
 
-    // 补齐空格子（占位），保持排布整齐
     const blanks = pageSize - list.length;
     for (let i = 0; i < blanks; i++) {
         const placeholder = document.createElement('div');
@@ -940,12 +974,10 @@ async function sendCommand(cmd, cardEl) {
     const ms = parseInt(cmdRepeatMs.value || '1000', 10);
     const repeating = cmdRepeat.checked && ms >= 1;
 
-    // 定时模式：点击即开/关
     if (repeating) {
         if (state.cmdIntervalMap.has(cmd.id)) {
             clearInterval(state.cmdIntervalMap.get(cmd.id));
             state.cmdIntervalMap.delete(cmd.id);
-            // 去掉任何页面上该命令卡片的动效态
             document.querySelectorAll(`.cmd-card[data-cmd-id="${cmd.id}"]`)
                 .forEach(el => el.classList.remove('auto'));
             return;
@@ -955,16 +987,14 @@ async function sendCommand(cmd, cardEl) {
             if (res.ok) echoIfEnabled(id, cmd.data || '');
         }, ms);
         state.cmdIntervalMap.set(cmd.id, timer);
-        if (cardEl) cardEl.classList.add('auto');     // 当前卡片动效
+        if (cardEl) cardEl.classList.add('auto');
     } else {
-        // 单次发送
         const res = await window.api.serial.write(id, cmd.data || '', cmd.mode || 'text', append);
         if (!res.ok) return alert('发送失败：' + res.error);
         echoIfEnabled(id, cmd.data || '');
     }
 }
 
-// 翻页
 cmdPrev.addEventListener('click', () => {
     const pages = totalCmdPages();
     state.cmdPage = (state.cmdPage - 1 + pages) % pages;
@@ -976,9 +1006,7 @@ cmdNext.addEventListener('click', () => {
     renderCmdGrid();
 });
 
-// 编辑命令
 cmdEditPage.addEventListener('click', () => {
-    // 渲染表格
     cmdTableBody.innerHTML = '';
     state.commands.forEach((cmd) => {
         cmdTableBody.appendChild(makeCmdRow(cmd));
@@ -1048,25 +1076,19 @@ async function loadCommands() {
 }
 
 function cryptoRandomId() {
-    // 非 Node 环境下简单随机串
     return 'c' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
 }
 
 // ===== 启动初始化 =====
 (async function init() {
     await refreshPortsCombo();
-    // 加载面板
     const saved = await window.api.config.load();
     state.savedConfig = saved;
     saved.forEach(p => createPane(p.id, p.name));
-
-    // 加载命令
     await loadCommands();
-    // 初始渲染命令页
     renderCmdGrid();
     window.addEventListener('resize', () => renderCmdGrid());
 
-    // 页面切换
     const navButtons = document.querySelectorAll('#bottomNav button');
     const pages = document.querySelectorAll('#bottomContent .page');
     navButtons.forEach(btn => {
