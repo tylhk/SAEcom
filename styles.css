@@ -245,6 +245,10 @@ input[type="number"],
   width: 56px;
 }
 
+#sidebar:not(.open) ~ #workspace::before {
+  left: 56px;
+}
+
 .sidebar-header {
   display: grid;
   grid-template-columns: var(--side-btn) 1fr;
@@ -716,12 +720,27 @@ input[type="number"],
 
 .cmd-grid {
   height: 100%;
-  display: flex;
-  flex-wrap: wrap;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-auto-rows: 34px;
   gap: 8px;
   padding: 4px 8px 12px;
   overflow: hidden;
   align-content: flex-start;
+}
+
+.cmd-card { width: 100%; max-width: none; }
+
+.cmd-card button.send {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.cmd-card .preview {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .cmd-card {
@@ -1206,7 +1225,7 @@ dialog {
   left: 260px;
   right: 0;
   top: 0;
-  height: 30px;
+  height: var(--titlebar-height, 30px);
   -webkit-app-region: drag;
   pointer-events: auto;
 }
@@ -1364,3 +1383,22 @@ dialog {
   0%   { opacity: 1; transform: translate(-50%, -50%) rotate(0deg); }
   100% { opacity: 0; transform: translate(calc(-50% + var(--dx)), calc(-50% + var(--dy))) rotate(var(--rot)); }
 }
+
+.pane .body{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.pop-body{
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+.echo-line { color: #e74c3c; }
+.theme-dark .echo-line { color: #ff6b6b; }

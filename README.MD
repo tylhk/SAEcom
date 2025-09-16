@@ -1,15 +1,93 @@
-## 特性
+# 串口助手 (SAEcom)
+
+## 项目特性概览
+
 - 满足串口助手的基本功能
 - 能够同时连接多个串口并将面板分离展示
 - 面板可随意拖拽改变大小，且能够弹出作为独立窗口
-- 创建的面板会自动保存，并记录位置、大小和各种配置信息
 - 用户可自定义js脚本控制串口数据发送
-## 版本更新
+
+------
+
+## 使用方法
+
+- 下载 [Releases](https://github.com/tylhk/SAEcom/releases) 文件并安装使用
+- Fork[源码](https://github.com/tylhk/SAEcom)自行编译使用
+
+------
+
+## 功能展示
+
+### 多面板串口管理
+
+可以同时创建多个串口面板，方便开发者对比调试。面板支持拖拽、置顶、大小调整等操作。
+
+<img src="https://satone1008.cn/wp-content/uploads/2025/09/1.gif" 
+     style="width:100%; height:auto;" />
+
+### 自定义命令与自动发送
+
+支持保存常用命令，并在命令面板中快速调用。 自动发送功能带有动态效果，能清晰区分正在执行的指令。
+
+<img src="https://satone1008.cn/wp-content/uploads/2025/09/2.gif" 
+     style="width:100%; height:auto;" />
+
+### 脚本功能
+
+内置脚本运行环境，可以快速编写脚本实现自动化操作。 例如：定时生成随机字符串并通过串口发送。 脚本可一键运行 / 停止，方便测试和扩展。
+
+<img src="https://satone1008.cn/wp-content/uploads/2025/09/3.gif" 
+     style="width:100%; height:auto;" />
+
+### 配置文件与状态保存
+
+- 支持自动保存面板配置（波特率、校验位、命令列表等）
+- 程序启动时会自动加载上一次的配置，避免重复设置
+
+### 夜间模式与惊人的动画（可选项）
+
+- 界面支持日/夜间模式切换
+- 交互细节带有粒子特效、震动动画
+
+<img src="https://satone1008.cn/wp-content/uploads/2025/09/4.gif" 
+     style="width:100%; height:auto;" />
+
+------
+
+## 更新日志
+
 ### Ver.0.1.1
+
 - 完成串口助手基本功能
 - 添加用户可用的js脚本功能
+
 ### Ver.0.2.0
+
 - 新的界面UI设计
 - 新的设置页
+
+### Ver.0.2.1
+**FIX:**
+- 菜单栏收起后的菜单区域无法按住拖拽窗口
+- 命令过长时会挤压命令栏flex布局
+- 会出现输入框无法点击的情况
+
+**UPDATE:**
+- 面板中过长数据会自动换行显示
+- 查看面板旧数据时不会被接收到的新数据强行刷新页面
+- 优化数据量大的情况下面板的操作与拖拽表现
+------
+
 ## TODO
-- [ ] 
+- 暂无
+
+------
+
+## 建议与反馈
+
+如果您对功能或交互有更好的想法，欢迎提交 issue 或 PR。
+
+博客与联系渠道：[支持多窗口监视的串口助手SAEcom – Satone](https://satone1008.cn/index.php/2025/09/16/支持多窗口监视的串口助手saecom/) 
+
+项目仓库地址：[SAEcom: 基于Electron开发的多面板串口助手/Serial port Assistant based on Electron](https://github.com/tylhk/SAEcom)
+

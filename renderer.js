@@ -11,7 +11,7 @@ const settingsOk = document.getElementById('settingsOk');
 const fullscreenToggle = $('#fullscreenToggle');
 const nightToggle = $('#nightToggle');
 const animToggle = $('#animToggle');
-
+const LOG_MAX_CHARS = 1000000;
 // 设置持久化
 const SETTINGS_KEY = 'appSettings';
 function loadSettings() {
@@ -79,10 +79,10 @@ function ensureFxLayer() {
 }
 function shakeScreenRandom(maxAmp = 8, duration = 0.5) {
     const t = document.getElementById('workspace') || document.body;
-    const rand = (n) => (Math.random()*2 - 1) * n;
+    const rand = (n) => (Math.random() * 2 - 1) * n;
     const A = Math.max(2, maxAmp);
-    const rot = () => (Math.random()*2 - 1) * 2;
-  
+    const rot = () => (Math.random() * 2 - 1) * 2;
+
     t.style.setProperty('--shakeT', `${duration}s`);
     t.style.setProperty('--sx1', `${rand(A)}px`);
     t.style.setProperty('--sy1', `${rand(A)}px`);
@@ -96,13 +96,13 @@ function shakeScreenRandom(maxAmp = 8, duration = 0.5) {
     t.style.setProperty('--sx4', `${rand(A)}px`);
     t.style.setProperty('--sy4', `${rand(A)}px`);
     t.style.setProperty('--rot4', `${rot()}deg`);
-  
+
     t.classList.remove('fx-shake-rand');
     void t.offsetWidth;
     t.classList.add('fx-shake-rand');
-    t.addEventListener('animationend', () => t.classList.remove('fx-shake-rand'), { once:true });
-  }
-  
+    t.addEventListener('animationend', () => t.classList.remove('fx-shake-rand'), { once: true });
+}
+
 function ensureFxCanvas() {
     if (!fxCanvas) {
         if (!fxLayer) { fxLayer = document.getElementById('fxLayer') || document.createElement('div'); fxLayer.id = 'fxLayer'; document.body.appendChild(fxLayer); }
@@ -351,7 +351,7 @@ const btnNew = $('#btnNew');
 const btnRefreshPorts = $('#btnRefreshPorts');
 const btnScriptStop = $('#btnScriptStop');
 let currentRunId = null;
-const SIDEBAR_COLLAPSED_W = 50;
+const SIDEBAR_COLLAPSED_W = 56;
 const LEFT_GUTTER = 12;
 const activeLabel = $('#activePanelLabel');
 const selPort = $('#selPort');
@@ -492,7 +492,7 @@ function exportPanelsConfig() {
         top: p.el.style.top || "30px",
         width: p.el.style.width || "420px",
         height: p.el.style.height || "240px",
-        hidden: p.el.classList.contains('hidden')   // ← 新增
+        hidden: p.el.classList.contains('hidden')
     }));
 }
 
@@ -502,6 +502,39 @@ function escHtml(s) {
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;');
+}
+
+function trimPane(pane) {
+    const MAX = LOG_MAX_CHARS;
+    const LIMIT = MAX * 1.2;
+    if (pane.textBuffer.length <= LIMIT && pane.hexBuffer.length <= LIMIT) return;
+
+    while (pane.textBuffer.length > MAX && pane.chunks && pane.chunks.length > 1) {
+        const c = pane.chunks.shift();
+        pane.textBuffer = pane.textBuffer.slice(c.text.length);
+        pane.hexBuffer = pane.hexBuffer.slice(c.hex.length);
+    }
+}
+
+function appendTextTail(pane, text) {
+    const body = pane.el.querySelector('.body');
+    const last = body.lastChild;
+    if (pane.tailTextNode && last === pane.tailTextNode) {
+        pane.tailTextNode.appendData(text);
+    } else {
+        const tn = document.createTextNode(text);
+        body.appendChild(tn);
+        pane.tailTextNode = tn;
+        pane.bodyTextNode = tn;
+    }
+    if (pane.autoScroll) body.scrollTop = body.scrollHeight;
+}
+
+function appendNodeTail(pane, node) {
+    const body = pane.el.querySelector('.body');
+    body.appendChild(node);
+    pane.tailTextNode = null;
+    if (pane.autoScroll) body.scrollTop = body.scrollHeight;
 }
 
 /* ===== 脚本 ===== */
@@ -669,13 +702,25 @@ function nowTs() {
 function echoIfEnabled(id, text) {
     const echo = $('#echoSend');
     if (!echo || !echo.checked) return;
+
     const pane = state.panes.get(id);
     if (!pane) return;
-    const body = pane.el.querySelector('.body');
+
     const ts = nowTs();
-    body.innerHTML += `<span style="color:red">[${ts}]\n${escHtml(text)}\n</span>`;
-    body.scrollTop = body.scrollHeight;
+    const addText = `[${ts}]\n${text}\n`;
+
+    pane.textBuffer += addText;
+    pane.hexBuffer += addText;
+    pane.chunks.push({ text: addText, hex: addText, isEcho: true });
+    trimPane(pane);
+
+    const el = document.createElement('span');
+    el.className = 'echo-line';
+    el.textContent = addText;
+    appendNodeTail(pane, el);
 }
+
+
 
 function setActive(id) {
     state.activeId = id;
@@ -761,6 +806,10 @@ function createPane(portPath, name) {
     <div class="resizer"></div>
   `;
     panesEl.appendChild(el);
+    const bodyEl = el.querySelector('.body');
+    let autoScrollFlag = true;
+    const isAtBottom = () => (bodyEl.scrollTop + bodyEl.clientHeight >= bodyEl.scrollHeight - 4);
+    bodyEl.addEventListener('scroll', () => { autoScrollFlag = isAtBottom(); });
 
     const btnToggle = el.querySelector('.btnToggle');
     btnToggle.addEventListener('click', async (e) => {
@@ -847,6 +896,9 @@ function createPane(portPath, name) {
             setTimeout(() => { suppressClick = false; }, 50);
         }
     }
+    window.addEventListener('pointerup', endDrag, true);
+    window.addEventListener('mouseup', endDrag, true);
+    window.addEventListener('mouseleave', endDrag, true);
 
     titleEl.addEventListener('pointerdown', (e) => {
         if (e.target.tagName === 'BUTTON') return;
@@ -898,12 +950,23 @@ function createPane(portPath, name) {
     titleEl.addEventListener('lostpointercapture', endDrag);
     window.addEventListener('blur', endDrag);
 
+    window.addEventListener('pointerup', endDrag);
+
     el.addEventListener('click', (e) => {
         if (suppressClick) { e.stopPropagation(); e.preventDefault(); }
     }, true);
 
     const resizer = el.querySelector('.resizer');
     let resizing = false, startX2 = 0, startY2 = 0, startW = 0, startH = 0;
+    const endResize = () => {
+        if (!resizing) return;
+        resizing = false;
+        window.api.config.save(exportPanelsConfig());
+    };
+    window.addEventListener('pointerup', endResize, true);
+    window.addEventListener('mouseup', endResize, true);
+    window.addEventListener('blur', endResize, true);
+
     resizer.addEventListener('pointerdown', (e) => {
         resizing = true;
         resizer.setPointerCapture(e.pointerId);
@@ -944,8 +1007,25 @@ function createPane(portPath, name) {
         options: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' },
         open: false,
         viewMode: 'text',
-        logs: []
+        logs: [],
+
+        chunks: [],
+        bodyTextNode: null,
+        tailTextNode: null,
+        textBuffer: '',
+        hexBuffer: '',
+        groupTimer: null,
+        groupOpen: false,
+        autoScroll: true
     });
+
+    const paneObj = state.panes.get(id);
+    if (paneObj) paneObj.autoScroll = autoScrollFlag;
+    bodyEl.addEventListener('scroll', () => {
+        const p = state.panes.get(id);
+        if (p) p.autoScroll = (bodyEl.scrollTop + bodyEl.clientHeight >= bodyEl.scrollHeight - 4);
+    });
+
 
     const saved = (state.savedConfig || []).find(p => p.id === id);
     if (saved) {
@@ -1011,6 +1091,11 @@ function refreshPanelList() {
             const body = pane.el.querySelector('.body');
             body.innerHTML = '';
             pane.logs = [];
+            pane.chunks = [];
+            pane.textBuffer = '';
+            pane.hexBuffer = '';
+            pane.bodyTextNode = null;
+            pane.tailTextNode = null;
         };
 
         const bDel = document.createElement('button');
@@ -1039,55 +1124,103 @@ function formatBytes(bytes, mode = 'text') {
 
 window.api.serial.onData(({ id, bytes }) => {
     const bufferTime = parseInt(bufferInput.value || '0', 10);
+    const pane = state.panes.get(id);
+    if (!pane) return;
+
+    if (!state.buffers.has(id)) state.buffers.set(id, { timer: null, open: false });
+    const g = state.buffers.get(id);
+
+    const appendChunk = (withTs) => {
+        const ts = nowTs();
+        const textStr = formatBytes(bytes, 'text');
+        const hexStr = formatBytes(bytes, 'hex');
+        const addText = (withTs ? `[${ts}]\n` : '') + textStr + '\n';
+        const addHex = (withTs ? `[${ts}]\n` : '') + hexStr + '\n';
+
+        pane.textBuffer += addText;
+        pane.hexBuffer += addHex;
+        pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
+        trimPane(pane);
+
+        const piece = (pane.viewMode === 'hex') ? addHex : addText;
+        appendTextTail(pane, piece);
+
+    };
+
     if (bufferTime > 0) {
-        if (!state.buffers.has(id)) state.buffers.set(id, { timer: null, data: [] });
-        const bufObj = state.buffers.get(id);
-        bufObj.data.push(bytes);
-        if (bufObj.timer) clearTimeout(bufObj.timer);
-        bufObj.timer = setTimeout(() => {
-            const merged = new Uint8Array(bufObj.data.reduce((acc, b) => acc + b.length, 0));
-            let offset = 0;
-            bufObj.data.forEach(b => { merged.set(b, offset); offset += b.length; });
-            bufObj.data = [];
-            showData(id, merged);
-        }, bufferTime);
+        if (!g.open) { g.open = true; appendChunk(true); }
+        else { appendChunk(false); }
+        if (g.timer) clearTimeout(g.timer);
+        g.timer = setTimeout(() => { g.open = false; g.timer = null; }, bufferTime);
     } else {
-        showData(id, bytes);
+        appendChunk(true);
     }
 });
+
 
 function showData(id, bytes) {
     const pane = state.panes.get(id);
     if (!pane) return;
     const ts = nowTs();
-    pane.logs.push({ ts, bytes });
+    const textStr = formatBytes(bytes, 'text');
+    const hexStr = formatBytes(bytes, 'hex');
+    const addText = `[${ts}]\n` + textStr + '\n';
+    const addHex = `[${ts}]\n` + hexStr + '\n';
 
-    const body = pane.el.querySelector('.body');
-    const dataStr = formatBytes(bytes, pane.viewMode);
-    body.innerHTML += `[${ts}]\n${escHtml(dataStr)}\n`;
-    body.scrollTop = body.scrollHeight;
+    pane.textBuffer += addText;
+    pane.hexBuffer += addHex;
+    pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
+    trimPane(pane);
+
+    const piece = (pane.viewMode === 'hex') ? addHex : addText;
+    appendTextTail(pane, piece);
 }
+
 
 function redrawPane(id) {
     const pane = state.panes.get(id);
     if (!pane) return;
     const body = pane.el.querySelector('.body');
+
+    const mode = (pane.viewMode === 'hex') ? 'hex' : 'text';
     body.innerHTML = '';
-    pane.logs.forEach(log => {
-        const dataStr = formatBytes(log.bytes, pane.viewMode);
-        body.innerHTML += `[${log.ts}]\n${escHtml(dataStr)}\n`;
-    });
-    body.scrollTop = body.scrollHeight;
+
+    const frag = document.createDocumentFragment();
+    let acc = '';
+    for (const c of (pane.chunks || [])) {
+        const s = (mode === 'hex') ? c.hex : c.text;
+        if (c.isEcho) {
+            if (acc) { frag.appendChild(document.createTextNode(acc)); acc = ''; }
+            const span = document.createElement('span');
+            span.className = 'echo-line';
+            span.textContent = s;
+            frag.appendChild(span);
+        } else {
+            acc += s;
+        }
+    }
+    if (acc) frag.appendChild(document.createTextNode(acc));
+
+    body.appendChild(frag);
+    const last = body.lastChild;
+    pane.bodyTextNode = (last && last.nodeType === 3) ? last : null;
+    pane.tailTextNode = pane.bodyTextNode;
+
+    if (pane.autoScroll) body.scrollTop = body.scrollHeight;
 }
 
 window.api.serial.onEvent((evt) => {
     const pane = state.panes.get(evt.id);
     if (!pane) return;
-    const body = pane.el.querySelector('.body');
-    if (evt.type === 'close') { pane.open = false; body.textContent += `\n[已关闭]\n`; }
-    else if (evt.type === 'error') { body.textContent += `\n[错误] ${evt.message}\n`; }
+    const add = (evt.type === 'close') ? `\n[已关闭]\n` : `\n[错误] ${evt.message}\n`;
+    pane.textBuffer += add;
+    pane.hexBuffer += add;
+    pane.chunks.push({ text: add, hex: add, isEcho: false });
+    trimPane(pane);
+    appendTextTail(pane, add);
     refreshPanelList();
 });
+
 
 window.api.panel.onFocusFromPopout(({ id }) => { if (state.panes.has(id)) setActive(id); });
 window.api.panel.onDockRequest(({ id, html }) => {
@@ -1096,11 +1229,33 @@ window.api.panel.onDockRequest(({ id, html }) => {
         const label = known ? (known.friendlyName || known.path) : id;
         createPane(id, label);
     }
+
     const pane = state.panes.get(id);
-    pane.el.querySelector('.body').innerHTML = html;
+    const body = pane.el.querySelector('.body');
+
+    const tmp = document.createElement('div');
+    tmp.innerHTML = html || '';
+    const text = tmp.innerText || tmp.textContent || '';
+
+    pane.textBuffer = text;
+    pane.hexBuffer = text;
+    pane.chunks = [{ text, hex: text, isEcho: false }];
+
+    body.innerHTML = '';
+    const tn = document.createTextNode(text);
+    body.appendChild(tn);
+    pane.bodyTextNode = tn;
+    pane.tailTextNode = tn;
+
+    pane.autoScroll = true;
+    body.scrollTop = body.scrollHeight;
+
     pane.el.classList.remove('hidden');
     setActive(id);
 });
+
+
+
 
 toggleSidebarBtn.addEventListener('click', () => {
     const opening = !sidebarEl.classList.contains('open');
@@ -1206,21 +1361,58 @@ btnSendFile.addEventListener('click', async () => {
     const filePath = fileNameInput.dataset.fullPath;
     if (!filePath) return alert('请先选择文件');
 
+    const pane = state.panes.get(id);
+    const log = (msg) => {
+        const line = `[系统] ${msg}\n`;
+        pane.textBuffer += line;
+        pane.hexBuffer += line;
+        pane.chunks.push({ text: line, hex: line, isEcho: false });
+        appendTextTail(pane, line);
+    };
+
     try {
         const { hex, length, error } = await window.api.file.readHex(filePath);
-        if (error) return alert('读取文件失败：' + error);
+        if (error) { log('读取文件失败：' + error); return; }
 
+        log(`开始发送文件：${fileNameInput.value}（${length} 字节）`);
         const chunkSize = 2048;
+
         for (let i = 0; i < hex.length; i += chunkSize) {
             const chunk = hex.slice(i, i + chunkSize);
             const res = await window.api.serial.write(id, chunk, 'hex', 'none');
-            if (!res.ok) return alert('文件发送失败：' + res.error);
+            if (!res.ok) { log('文件发送失败：' + res.error); return; }
         }
-        alert(`文件 ${fileNameInput.value} 已发送 (${length} 字节)`);
+        log(`文件发送完成：${fileNameInput.value}（${length} 字节）`);
     } catch (e) {
-        alert('文件处理异常：' + e.message);
+        log('文件处理异常：' + (e?.message || e));
+    } finally {
+        const inp = $('#inputData');
+        if (inp) {
+            btnSendFile.blur();
+            fileChooser.blur?.();
+
+            requestAnimationFrame(() => {
+                try {
+                    inp.blur();
+                    inp.focus();
+                    const len = inp.value.length;
+                    inp.setSelectionRange(len, len);
+                } catch { }
+            });
+        }
     }
 });
+
+inputData.addEventListener('pointerdown', () => {
+    requestAnimationFrame(() => {
+        try {
+            inputData.focus();
+            const len = inputData.value.length;
+            inputData.setSelectionRange(len, len);
+        } catch { }
+    });
+});
+
 function isDraggingFiles(e) {
     const types = Array.from(e.dataTransfer?.types || []);
     return types.includes('Files');

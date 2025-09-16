@@ -115,7 +115,14 @@ ipcMain.handle('serial:close', async (_e,{id})=>{
   return new Promise(r=>e.port.close(err=>{ if(err) return r({ok:false,error:err.message}); ports.delete(id); r({ok:true}); }));
 });
 ipcMain.handle('serial:write', async (_e,a)=>writeToSerial(a.id,a.data,a.mode,a.append));
-
+ipcMain.handle('file:readHex', (_e, filePath) => {
+  try {
+    const buf = fs.readFileSync(filePath);
+    return { hex: buf.toString('hex'), length: buf.length };
+  } catch (err) {
+    return { error: err.message || String(err) };
+  }
+});
 ipcMain.on('window:set-fullscreen',(_e,{flag})=>mainWindow?.setFullScreen(!!flag));
 ipcMain.on('window:toggle-fullscreen',()=>mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
 ipcMain.on('theme:set',(_e,{dark})=>{
