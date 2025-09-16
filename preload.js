@@ -7,6 +7,10 @@ function decodeBase64ToUint8Array(b64) {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  window: {
+    setFullscreen: (flag) => ipcRenderer.send('window:set-fullscreen', { flag }),
+    toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen')
+  },
   serial: {
     list: () => ipcRenderer.invoke('serial:list'),
     open: (path, options) => ipcRenderer.invoke('serial:open', { path, options }),
@@ -39,12 +43,10 @@ contextBridge.exposeInMainWorld('api', {
     load: () => ipcRenderer.invoke('config:load'),
     save: (panels) => ipcRenderer.send('config:save', panels)
   },
-  // 命令配置
   commands: {
     load: () => ipcRenderer.invoke('commands:load'),
     save: (cmds) => ipcRenderer.send('commands:save', cmds)
   },
-  // 文件读取
   file: {
     readHex: (filePath) => ipcRenderer.invoke('file:readHex', filePath)
   },
@@ -61,4 +63,5 @@ contextBridge.exposeInMainWorld('api', {
     stop: (runId) => ipcRenderer.invoke('scripts:stop', { runId }),
     onEnded: (cb) => ipcRenderer.on('scripts:ended', (_e, payload) => cb(payload))
   },
+  theme: { set: (dark) => ipcRenderer.send('theme:set', { dark }) }
 });

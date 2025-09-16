@@ -1,4 +1,8 @@
-// panel.js
+try {
+  const s = JSON.parse(localStorage.getItem('appSettings') || '{}');
+  if (s && s.dark) document.documentElement.classList.add('theme-dark');
+} catch {}
+
 const titleEl = document.getElementById('title');
 const displayEl = document.getElementById('display');
 const btnDock = document.getElementById('btnDock');
@@ -9,7 +13,6 @@ let winTitle = params.get('title') || `串口窗口 - ${portId || ''}`;
 
 titleEl.textContent = winTitle;
 
-// 接收主窗口传来的内容
 window.api.panel.onLoadContent(({ id, html }) => {
   if (!portId) {
     portId = id;
@@ -41,10 +44,8 @@ window.api.serial.onEvent((evt) => {
   if (evt.type === 'error') displayEl.textContent += `\n[错误] ${evt.message}\n`;
 });
 
-// 收回
 btnDock.addEventListener('click', () => {
   const html = displayEl.innerHTML;
   window.api.panel.requestDock(portId, html);
-  // 通知主窗口显示该面板
   window.close();
 });

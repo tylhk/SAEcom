@@ -44,10 +44,6 @@
                         <button id="btnSaveLog">导出面板数据</button>
                     </div>
                     <div class="row">
-                        <label>端口：</label>
-                        <select id="selPort"></select>
-                    </div>
-                    <div class="row">
                         <label>波特率：</label>
                         <input id="baud" type="number" value="115200" min="110" step="1" />
                         <label>数据位：</label>
@@ -71,24 +67,25 @@
                             <option value="space">space</option>
                         </select>
                     </div>
-                    <div class="row">
+                    <div class="row" id="row-send-main">
                         <label>发送：</label>
                         <input id="inputData" type="text" placeholder="输入要发送的数据…" />
                         <button id="btnSend">发送</button>
-                        <select id="sendMode">
-                            <option value="text">文本</option>
-                            <option value="hex">HEX</option>
-                        </select>
+                        <label><input type="checkbox" id="echoSend"> 回显</label>
+                    </div>
+
+                    <div class="row" id="row-send-opts">
                         <select id="append">
                             <option value="CRLF">CRLF</option>
                             <option value="none">无结尾</option>
                             <option value="CR">CR</option>
                             <option value="LF">LF</option>
                         </select>
-                        <label>缓冲(ms)：</label>
+                        <label>缓冲(ms):</label>
                         <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
-                        <label><input type="checkbox" id="echoSend"> 回显</label>
+                        <label><input type="checkbox" id="hexMode"> HEX发送</label>
                     </div>
+
                     <div class="row">
                         <label>文件：</label>
                         <input id="fileName" type="text" placeholder="拖拽文件到此处…" readonly />
@@ -134,6 +131,13 @@
                         <a href="mailto:satone_shichimiya@outlook.com"
                             onclick="window.api.shell.openExternal(this.href); return false;">
                             satone_shichimiya@outlook.com
+                        </a>
+                    </p>
+                    <p>
+                        项目讨论页：
+                        <a href="https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/"
+                            onclick="window.api.shell.openExternal(this.href); return false;">
+                            博客链接
                         </a>
                     </p>
                 </div>
@@ -210,7 +214,6 @@
                 <button id="scriptNameOk">确定</button>
             </div>
         </dialog>
-        <!-- 设置对话框 -->
         <dialog id="dlgSettings">
             <div class="dlg">
                 <div class="dlg-header">
@@ -219,9 +222,23 @@
                 </div>
                 <div class="dlg-body">
                     <div class="setting-item">
-                        <div class="setting-label">关闭音量</div>
+                        <div class="setting-label">全屏显示</div>
                         <label class="el-switch">
-                            <input type="checkbox" id="muteToggle">
+                            <input type="checkbox" id="fullscreenToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">夜间模式</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="nightToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">惊人的动画</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="animToggle">
                             <span class="el-switch-core"></span>
                         </label>
                     </div>
