@@ -63,5 +63,9 @@ contextBridge.exposeInMainWorld('api', {
     stop: (runId) => ipcRenderer.invoke('scripts:stop', { runId }),
     onEnded: (cb) => ipcRenderer.on('scripts:ended', (_e, payload) => cb(payload))
   },
-  theme: { set: (dark) => ipcRenderer.send('theme:set', { dark }) }
+  theme: {
+    set: (dark) => ipcRenderer.send('theme:set', { dark }),
+    onApply: (cb) => ipcRenderer.on('theme:apply', (_e, payload) => cb(payload))
+  }
+
 });

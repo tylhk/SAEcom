@@ -1,7 +1,23 @@
+function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
 try {
   const s = JSON.parse(localStorage.getItem('appSettings') || '{}');
   if (s && s.dark) document.documentElement.classList.add('theme-dark');
-} catch {}
+} catch { }
+
+window.api?.theme?.onApply?.(({ dark }) => {
+  document.documentElement.classList.toggle('theme-dark', !!dark);
+  try {
+    const s = JSON.parse(localStorage.getItem('appSettings') || '{}') || {};
+    s.dark = !!dark;
+    localStorage.setItem('appSettings', JSON.stringify(s));
+  } catch { }
+});
+
+try {
+  const s = JSON.parse(localStorage.getItem('appSettings') || '{}');
+  if (s && s.dark) document.documentElement.classList.add('theme-dark');
+} catch { }
 
 const titleEl = document.getElementById('title');
 const displayEl = document.getElementById('display');
@@ -23,19 +39,19 @@ window.api.panel.onLoadContent(({ id, html }) => {
 });
 
 window.api.serial.onData(({ id, bytes }) => {
-    if (id !== portId) return;
-    const ts = new Date();
-    const pad = (n, len=2) => n.toString().padStart(len, '0');
-    const timestamp = `${ts.getFullYear()}-${pad(ts.getMonth()+1)}-${pad(ts.getDate())} `
-                    + `${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}.`
-                    + `${pad(ts.getMilliseconds(),3)}`;
-    try {
-      const txt = new TextDecoder().decode(bytes);
-      displayEl.innerHTML += `[${timestamp}]\n${escHtml(txt)}\n`;
-    } catch {
-      displayEl.innerHTML += `[${timestamp}]\n${escHtml(Array.from(bytes).map(b => b.toString(16).padStart(2,'0')).join(' '))}\n`;
-    }
-    displayEl.scrollTop = displayEl.scrollHeight;
+  if (id !== portId) return;
+  const ts = new Date();
+  const pad = (n, len = 2) => n.toString().padStart(len, '0');
+  const timestamp = `${ts.getFullYear()}-${pad(ts.getMonth() + 1)}-${pad(ts.getDate())} `
+    + `${pad(ts.getHours())}:${pad(ts.getMinutes())}:${pad(ts.getSeconds())}.`
+    + `${pad(ts.getMilliseconds(), 3)}`;
+  try {
+    const txt = new TextDecoder().decode(bytes);
+    displayEl.innerHTML += `[${timestamp}]\n${escHtml(txt)}\n`;
+  } catch {
+    displayEl.innerHTML += `[${timestamp}]\n${escHtml(Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' '))}\n`;
+  }
+  displayEl.scrollTop = displayEl.scrollHeight;
 });
 
 window.api.serial.onEvent((evt) => {

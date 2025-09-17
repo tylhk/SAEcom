@@ -155,23 +155,28 @@
         </dialog>
 
         <dialog id="dlgCmdEdit">
-            <h3>编辑命令（全局）</h3>
+            <h3>编辑命令</h3>
             <div class="cmd-table-wrap">
                 <table class="cmd-table">
                     <thead>
                         <tr>
-                            <th>名称</th>
-                            <th>内容</th>
-                            <th>模式</th>
-                            <th>操作</th>
+                          <th class="drag" style="width:36px;">序</th>
+                          <th class="sel"  style="width:44px;">
+                            <input id="cmdSelectAll" type="checkbox" title="全选/全不选">
+                          </th>
+                          <th>名称</th>
+                          <th>内容</th>
+                          <th style="width:96px;">模式</th>
+                          <th style="width:96px;">操作</th>
                         </tr>
-                    </thead>
+                      </thead>                      
                     <tbody id="cmdTableBody"></tbody>
                 </table>
             </div>
             <div class="cmd-edit-actions">
                 <button id="cmdAdd">新增命令</button>
                 <span style="flex:1"></span>
+                <button id="cmdDeleteSel">删除选中</button>
                 <button id="cmdCancel">取消</button>
                 <button id="cmdSave">保存</button>
             </div>

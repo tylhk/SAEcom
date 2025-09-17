@@ -1,3 +1,11 @@
+(function ensureDnDStyle() {
+    if (!document.getElementById('cmd-dnd-style')) {
+        const s = document.createElement('style');
+        s.id = 'cmd-dnd-style';
+        s.textContent = '.cmd-drag-float{pointer-events:none!important}';
+        document.head.appendChild(s);
+    }
+})();
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 const panesEl = $('#panes');
@@ -12,6 +20,324 @@ const fullscreenToggle = $('#fullscreenToggle');
 const nightToggle = $('#nightToggle');
 const animToggle = $('#animToggle');
 const LOG_MAX_CHARS = 1000000;
+const cmdDeleteSel = $('#cmdDeleteSel');
+const cmdTableBody = document.getElementById('cmdTableBody');
+const cmdSelectAll = document.getElementById('cmdSelectAll');
+let commandsSnapshot = null;
+let CMD_DND = {
+    active: false,
+    row: null,
+    handle: null,
+    floatEl: null,
+    placeholder: null,
+    startY: 0,
+    offsetX: 0,
+    offsetY: 0,
+    tableRect: null,
+    lastIndex: -1,
+};
+let CMD_SCROLL = { container: null, bounds: null, speed: 0, raf: 0, lastY: 0 };
+
+function autoScrollCheck(mouseY) {
+    CMD_SCROLL.lastY = mouseY;
+    if (!CMD_SCROLL.container) return;
+    CMD_SCROLL.bounds = CMD_SCROLL.container.getBoundingClientRect();
+    const t = 28;
+    let sp = 0;
+    if (mouseY < CMD_SCROLL.bounds.top + t) {
+        sp = -Math.ceil((CMD_SCROLL.bounds.top + t - mouseY) / 4);
+    } else if (mouseY > CMD_SCROLL.bounds.bottom - t) {
+        sp = Math.ceil((mouseY - (CMD_SCROLL.bounds.bottom - t)) / 4);
+    }
+    CMD_SCROLL.speed = Math.max(-16, Math.min(16, sp));
+}
+
+function autoScrollTick() {
+    if (!CMD_DND.active || !CMD_SCROLL.container) { CMD_SCROLL.raf = 0; return; }
+    if (CMD_SCROLL.speed) {
+        const c = CMD_SCROLL.container;
+        const before = c.scrollTop;
+        c.scrollTop = Math.max(0, Math.min(c.scrollHeight - c.clientHeight, before + CMD_SCROLL.speed));
+        if (c.scrollTop !== before) {
+            const idx = calcInsertIndex(CMD_SCROLL.lastY);
+            placePlaceholderAt(idx);
+        }
+    }
+    CMD_SCROLL.raf = requestAnimationFrame(autoScrollTick);
+}
+function ensureSysModal() {
+    let dlg = document.getElementById('sysModal');
+    if (!dlg) {
+        dlg = document.createElement('dialog');
+        dlg.id = 'sysModal';
+        dlg.className = 'sys-modal';
+        dlg.innerHTML = `
+        <form method="dialog" class="box">
+          <div class="title" id="smTitle">提示</div>
+          <div class="msg" id="smMsg"></div>
+          <input id="smInput" class="prompt-input" style="display:none" />
+          <div class="actions">
+            <button value="cancel" id="smCancel">取消</button>
+            <button value="ok" id="smOk" class="primary">确定</button>
+          </div>
+        </form>`;
+        document.body.appendChild(dlg);
+
+        dlg.addEventListener('cancel', (e) => { e.preventDefault(); dlg.close('cancel'); });
+        dlg.addEventListener('click', (e) => {
+            if (e.target === dlg) dlg.close('cancel');
+        });
+        dlg.addEventListener('close', () => {
+            requestAnimationFrame(() => requestAnimationFrame(() => {
+                try { safeRefocusInput(); } catch { }
+            }));
+        });
+    }
+    return {
+        dlg,
+        title: dlg.querySelector('#smTitle'),
+        msg: dlg.querySelector('#smMsg'),
+        input: dlg.querySelector('#smInput'),
+        ok: dlg.querySelector('#smOk'),
+        cancel: dlg.querySelector('#smCancel')
+    };
+}
+
+function uiAlert(message, { title = '提示', okText = '知道了' } = {}) {
+    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    t.textContent = title;
+    msg.innerHTML = '';
+    const node = (/\n/.test(message) || message.length > 80) ? document.createElement('pre') : document.createTextNode(message);
+    if (node.tagName === 'PRE') node.textContent = message;
+    msg.appendChild(node);
+    input.style.display = 'none';
+    cancel.style.display = 'none';
+    ok.textContent = okText;
+
+    return new Promise(resolve => {
+        const done = () => resolve();
+        ok.onclick = () => { dlg.close('ok'); done(); };
+        cancel.onclick = () => { dlg.close('ok'); done(); };
+        try { dlg.showModal(); } catch { }
+        ok.focus();
+    });
+}
+
+function uiConfirm(message, { title = '确认', okText = '确定', cancelText = '取消', danger = false } = {}) {
+    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    t.textContent = title;
+    msg.innerHTML = '';
+    const node = (/\n/.test(message) || message.length > 80) ? document.createElement('pre') : document.createTextNode(message);
+    if (node.tagName === 'PRE') node.textContent = message;
+    msg.appendChild(node);
+    input.style.display = 'none';
+    cancel.style.display = '';
+    ok.textContent = okText;
+    cancel.textContent = cancelText;
+    ok.classList.toggle('danger', !!danger);
+
+    return new Promise(resolve => {
+        ok.onclick = () => { dlg.close('ok'); resolve(true); };
+        cancel.onclick = () => { dlg.close('cancel'); resolve(false); };
+        try { dlg.showModal(); } catch { }
+        cancel.focus();
+    });
+}
+function logToPane(pane, text) {
+    const msg = String(text ?? '');
+    pane.textBuffer += msg;
+    pane.hexBuffer += msg;
+    pane.chunks.push({ text: msg, hex: msg, isEcho: false });
+    appendTextTail(pane, msg);
+}
+function uiPrompt(message, { title = '输入', okText = '确定', cancelText = '取消', defaultValue = '' } = {}) {
+    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    t.textContent = title;
+    msg.textContent = message || '';
+    input.style.display = '';
+    input.value = defaultValue || '';
+    ok.textContent = okText;
+    cancel.textContent = cancelText;
+
+    return new Promise(resolve => {
+        ok.onclick = () => { const v = input.value; dlg.close('ok'); resolve(v); };
+        cancel.onclick = () => { dlg.close('cancel'); resolve(''); };
+        input.onkeydown = (e) => { if (e.key === 'Enter') ok.click(); };
+        try { dlg.showModal(); } catch { }
+        setTimeout(() => input.select(), 0);
+    });
+}
+
+window._nativeAlert = window.alert;
+window.alert = (msg) => { uiAlert(String(msg)); };
+
+function preventSelectWhileDragging(e) {
+    if (CMD_DND.active) e.preventDefault();
+}
+
+function autoScrollStart() {
+    if (CMD_SCROLL.raf) return;
+    CMD_SCROLL.container = document.querySelector('#dlgCmdEdit .cmd-table-wrap');
+    if (!CMD_SCROLL.container) return;
+    CMD_SCROLL.bounds = CMD_SCROLL.container.getBoundingClientRect();
+    CMD_SCROLL.raf = requestAnimationFrame(autoScrollTick);
+}
+
+function autoScrollStop() {
+    if (CMD_SCROLL.raf) cancelAnimationFrame(CMD_SCROLL.raf);
+    CMD_SCROLL.raf = 0;
+    CMD_SCROLL.speed = 0;
+    CMD_SCROLL.container = null;
+}
+
+function listRows() {
+    return Array.from(cmdTableBody.querySelectorAll('tr')).filter(tr => tr !== CMD_DND.placeholder);
+}
+function calcInsertIndex(mouseY) {
+    const rows = listRows();
+    for (let i = 0; i < rows.length; i++) {
+        const box = rows[i].getBoundingClientRect();
+        const mid = box.top + box.height / 2;
+        if (mouseY < mid) return i;
+    }
+    return rows.length;
+}
+function placePlaceholderAt(index) {
+    const rows = listRows();
+    const old = CMD_DND.lastIndex;
+    CMD_DND.lastIndex = index;
+
+    if (index >= rows.length) cmdTableBody.appendChild(CMD_DND.placeholder);
+    else cmdTableBody.insertBefore(CMD_DND.placeholder, rows[index]);
+
+    if (old !== -1 && old !== index) {
+        const [from, to] = old < index ? [old, index - 1] : [index, old - 1];
+        for (let i = from; i <= to; i++) {
+            const tr = listRows()[i];
+            if (!tr) continue;
+            tr.classList.remove('anim-up', 'anim-down');
+            void tr.offsetHeight;
+            tr.classList.add(old < index ? 'anim-up' : 'anim-down');
+            setTimeout(() => tr.classList.remove('anim-up', 'anim-down'), 160);
+        }
+    }
+}
+function startCmdDrag(e, tr, handle) {
+    if (CMD_DND.active) return;
+
+    const rect = tr.getBoundingClientRect();
+    CMD_DND.active = true;
+    CMD_DND.row = tr;
+    CMD_DND.handle = handle;
+    CMD_DND.offsetX = e.clientX - rect.left;
+    CMD_DND.offsetY = e.clientY - rect.top;
+    CMD_DND.lastIndex = -1;
+
+    document.body.classList.add('cmd-dragging');
+
+    const ph = document.createElement('tr');
+    ph.className = 'cmd-drag-placeholder';
+    ph.style.height = rect.height + 'px';
+    CMD_DND.placeholder = ph;
+    tr.parentNode.insertBefore(ph, tr.nextSibling);
+
+    const float = document.createElement('div');
+    float.className = 'cmd-drag-float';
+    float.style.width = rect.width + 'px';
+
+    // 在对话框内部绝对定位，坐标相对对话框
+    const host = document.getElementById('dlgCmdEdit') || document.body;
+    const hostRect = host.getBoundingClientRect();
+    CMD_DND.hostEl = host;
+    CMD_DND.hostRect = hostRect;
+
+    // 初始就放到鼠标处（对话框坐标系）
+    float.style.left = (e.clientX - hostRect.left - CMD_DND.offsetX) + 'px';
+    float.style.top  = (e.clientY - hostRect.top  - CMD_DND.offsetY) + 'px';
+    float.style.zIndex = '2147483647';
+
+    const table = document.createElement('table');
+    table.className = 'cmd-table';
+    table.style.borderCollapse = 'collapse';
+    table.style.width = rect.width + 'px';
+
+    const tbody = document.createElement('tbody');
+    const ghost = tr.cloneNode(true);
+    ghost.style.opacity = '1';
+    ghost.style.display = '';
+    tbody.appendChild(ghost);
+    table.appendChild(tbody);
+
+    float.appendChild(table);
+    float.style.pointerEvents = 'none';
+
+    host.appendChild(float);
+    CMD_DND.floatEl = float;
+
+    tr.style.display = 'none';
+    placePlaceholderAt(calcInsertIndex(e.clientY));
+
+    autoScrollStart();
+    autoScrollCheck(e.clientY);
+    document.addEventListener('selectstart', preventSelectWhileDragging, true);
+    document.body.style.userSelect = 'none';
+}
+
+function moveCmdDrag(e) {
+    CMD_DND.lastMouseY = e.clientY;
+    autoScrollCheck(e.clientY);
+    if (!CMD_DND.active) return; 
+    let hostRect = CMD_DND.hostRect;
+    if (!hostRect || !CMD_DND.hostEl) {
+        CMD_DND.hostEl = document.getElementById('dlgCmdEdit') || document.body;
+        hostRect = CMD_DND.hostEl.getBoundingClientRect();
+        CMD_DND.hostRect = hostRect;
+    }
+    const nx = e.clientX - hostRect.left - CMD_DND.offsetX;
+    const ny = e.clientY - hostRect.top  - CMD_DND.offsetY;
+    CMD_DND.floatEl.style.left = Math.round(nx) + 'px';
+    CMD_DND.floatEl.style.top  = Math.round(ny) + 'px';
+    const idx = calcInsertIndex(e.clientY);
+    placePlaceholderAt(idx);
+}
+
+function endCmdDrag(force = false) {
+    if (!CMD_DND.active && !force) return;
+
+    const row = CMD_DND.row;
+    const ph = CMD_DND.placeholder;
+    const flt = CMD_DND.floatEl;
+
+    if (CMD_DND.active && row && ph && ph.parentNode === cmdTableBody) {
+        cmdTableBody.insertBefore(row, ph);
+    }
+    if (row) row.style.display = '';
+
+    if (ph && ph.parentNode) ph.remove();
+    if (flt && flt.parentNode) flt.remove();
+
+    document.querySelectorAll('.cmd-drag-float,.cmd-drag-placeholder').forEach(n => n.remove());
+
+    if (CMD_DND.active) {
+        const order = Array.from(cmdTableBody.querySelectorAll('tr')).map(x => x.dataset.id);
+        state.commands = order.map(id => state.commands.find(c => c.id === id)).filter(Boolean);
+    }
+
+    autoScrollStop();
+    document.body.classList.remove('cmd-dragging');
+
+    CMD_DND.active = false;
+    CMD_DND.row = CMD_DND.handle = CMD_DND.floatEl = CMD_DND.placeholder = null;
+    CMD_DND.lastIndex = -1;
+    document.removeEventListener('selectstart', preventSelectWhileDragging, true);
+    document.body.style.userSelect = '';
+}
+
+window.addEventListener('pointermove', moveCmdDrag, true);
+window.addEventListener('pointerup', endCmdDrag, true);
+
+let draggingRow = null;
+
 // 设置持久化
 const SETTINGS_KEY = 'appSettings';
 function loadSettings() {
@@ -346,6 +672,13 @@ window.addEventListener('click', (e) => {
         shakeScreenRandom(9, 0.55);
     }
 }, true);
+function updateDeleteSelectedBtn() {
+    const btn = document.getElementById('cmdDeleteSel');
+    const any = !!cmdTableBody?.querySelector('.rowSel:checked');
+    if (!btn) return;
+    btn.disabled = !any;
+    btn.classList.toggle('danger', any);
+}
 
 const btnNew = $('#btnNew');
 const btnRefreshPorts = $('#btnRefreshPorts');
@@ -383,7 +716,6 @@ const cmdRepeat = $('#cmdRepeat');
 const cmdRepeatMs = $('#cmdRepeatMs');
 
 const dlgCmdEdit = $('#dlgCmdEdit');
-const cmdTableBody = $('#cmdTableBody');
 const cmdAdd = $('#cmdAdd');
 const cmdCancel = $('#cmdCancel');
 const cmdSave = $('#cmdSave');
@@ -470,18 +802,37 @@ btnSaveLog.addEventListener('click', async () => {
 });
 
 const state = {
-    panes: new Map(), // id -> {el, info:{path,name}, options, open:boolean, viewMode, logs}
+    panes: new Map(),
     activeId: null,
     knownPorts: [],
     buffers: new Map(),
     savedConfig: [],
 
-    commands: [],     // { id, name, data, mode: 'text'|'hex' }
+    commands: [],
     cmdPage: 0,
     cmdCols: 1,
     cmdRows: 1,
-    cmdIntervalMap: new Map() // id -> intervalId
+    cmdIntervalMap: new Map(),
+
+    paneOrder: []
 };
+
+function applyPaneZOrder() {
+    const base = 100;
+    state.paneOrder.forEach((id, idx) => {
+        const p = state.panes.get(id);
+        if (p && p.el) p.el.style.zIndex = String(base + (state.paneOrder.length - idx));
+    });
+}
+
+function promotePaneToFront(id) {
+    const arr = state.paneOrder;
+    const i = arr.indexOf(id);
+    if (i >= 0) arr.splice(i, 1);
+    arr.unshift(id);
+    state.paneOrder = arr.filter(x => state.panes.has(x));
+    applyPaneZOrder();
+}
 
 function exportPanelsConfig() {
     return Array.from(state.panes.values()).map(p => ({
@@ -643,12 +994,11 @@ btnScriptSave.addEventListener('click', async () => {
 });
 
 btnScriptDelete.addEventListener('click', async () => {
-    if (!currentScript) return alert('未选择脚本');
-    if (!confirm(`删除脚本：${currentScript} ?`)) return;
-
+    if (!currentScript) return uiAlert('未选择脚本');
+    const ok = await uiConfirm(`删除脚本：${currentScript} ?`, { danger: true, okText: '删除' });
+    if (!ok) return;
     await window.api.scripts.delete(currentScript);
     await refreshScriptList();
-
     currentScript = '';
     currentScriptNameEl.textContent = '（未命名）';
     scriptEditor.readOnly = false;
@@ -720,8 +1070,6 @@ function echoIfEnabled(id, text) {
     appendNodeTail(pane, el);
 }
 
-
-
 function setActive(id) {
     state.activeId = id;
     $$('.pane').forEach(p => p.classList.remove('active'));
@@ -730,6 +1078,7 @@ function setActive(id) {
         pane.el.classList.add('active');
         activeLabel.textContent = pane.info.name;
         fillPortSelect(id);
+        promotePaneToFront(id);
     } else {
         activeLabel.textContent = '（未选择）';
     }
@@ -803,7 +1152,14 @@ function createPane(portPath, name) {
       </div>
     </div>
     <div class="body" data-id="${id}"></div>
-    <div class="resizer"></div>
+    <div class="resizer t"></div>
+    <div class="resizer r"></div>
+    <div class="resizer b"></div>
+    <div class="resizer l"></div>
+    <div class="resizer tl"></div>
+    <div class="resizer tr"></div>
+    <div class="resizer bl"></div>
+    <div class="resizer br"></div>
   `;
     panesEl.appendChild(el);
     const bodyEl = el.querySelector('.body');
@@ -890,7 +1246,7 @@ function createPane(portPath, name) {
         if (dragging) {
             dragging = false;
             el.classList.remove('dragging');
-            el.style.cursor = 'grab';
+            titleEl.style.cursor = 'grab';
             window.api.config.save(exportPanelsConfig());
             suppressClick = true;
             setTimeout(() => { suppressClick = false; }, 50);
@@ -906,7 +1262,7 @@ function createPane(portPath, name) {
         pressed = true;
         dragging = false;
         titleEl.setPointerCapture(e.pointerId);
-        el.style.cursor = 'grabbing';
+        titleEl.style.cursor = 'grabbing';
         startX = e.clientX; startY = e.clientY;
         startLeft = parseInt(el.style.left, 10) || 0;
         startTop = parseInt(el.style.top, 10) || 0;
@@ -956,50 +1312,85 @@ function createPane(portPath, name) {
         if (suppressClick) { e.stopPropagation(); e.preventDefault(); }
     }, true);
 
-    const resizer = el.querySelector('.resizer');
-    let resizing = false, startX2 = 0, startY2 = 0, startW = 0, startH = 0;
-    const endResize = () => {
-        if (!resizing) return;
-        resizing = false;
-        window.api.config.save(exportPanelsConfig());
-    };
-    window.addEventListener('pointerup', endResize, true);
-    window.addEventListener('mouseup', endResize, true);
-    window.addEventListener('blur', endResize, true);
+    const handles = el.querySelectorAll('.resizer');
+    let rs = { active: false, dir: '', sx: 0, sy: 0, sl: 0, st: 0, sw: 0, sh: 0 };
 
-    resizer.addEventListener('pointerdown', (e) => {
-        resizing = true;
-        resizer.setPointerCapture(e.pointerId);
-        startX2 = e.clientX; startY2 = e.clientY;
-        startW = el.offsetWidth; startH = el.offsetHeight;
-    });
-    resizer.addEventListener('pointermove', (e) => {
-        if (!resizing) return;
-        const dx = e.clientX - startX2;
-        const dy = e.clientY - startY2;
+    function endResize() {
+        if (!rs.active) return;
+        rs.active = false;
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        window.api.config.save(exportPanelsConfig());
+    }
+
+    function onResizeMove(e) {
+        if (!rs.active) return;
 
         const ws = document.getElementById('workspace');
-        const wsW = ws.clientWidth;
-        const wsH = ws.clientHeight;
-
-        const left = parseInt(el.style.left, 10) || 0;
-        const top = parseInt(el.style.top, 10) || 0;
-
+        const wsW = ws.clientWidth, wsH = ws.clientHeight;
         const minW = 200, minH = 120;
-        const maxW = Math.max(minW, wsW - left);
-        const maxH = Math.max(minH, wsH - top);
 
-        const newW = Math.min(Math.max(minW, startW + dx), maxW);
-        const newH = Math.min(Math.max(minH, startH + dy), maxH);
+        const leftMin = (sidebarEl?.offsetWidth || SIDEBAR_COLLAPSED_W) + LEFT_GUTTER;
+        const topMin = 0;
 
-        el.style.width = `${newW}px`;
-        el.style.height = `${newH}px`;
+        let dx = e.clientX - rs.sx;
+        let dy = e.clientY - rs.sy;
+
+        let left = rs.sl, top = rs.st, w = rs.sw, h = rs.sh;
+
+        if (rs.dir.includes('r')) {
+            const maxW = wsW - rs.sl;
+            w = Math.max(minW, Math.min(maxW, rs.sw + dx));
+        }
+
+        if (rs.dir.includes('b')) {
+            const maxH = wsH - rs.st;
+            h = Math.max(minH, Math.min(maxH, rs.sh + dy));
+        }
+
+        if (rs.dir.includes('l')) {
+            const leftMax = rs.sl + rs.sw - minW;
+            const leftNew = Math.max(leftMin, Math.min(leftMax, rs.sl + dx));
+            w = rs.sw + (rs.sl - leftNew);
+            left = leftNew;
+        }
+
+        if (rs.dir.includes('t')) {
+            const topMax = rs.st + rs.sh - minH;
+            const topNew = Math.max(topMin, Math.min(topMax, rs.st + dy));
+            h = rs.sh + (rs.st - topNew);
+            top = topNew;
+        }
+
+        if (left + w > wsW) w = Math.max(minW, wsW - left);
+        if (top + h > wsH) h = Math.max(minH, wsH - top);
+
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+        el.style.width = w + 'px';
+        el.style.height = h + 'px';
+    }
+
+
+    handles.forEach(h => {
+        h.addEventListener('pointerdown', (e) => {
+            rs.active = true;
+            document.body.style.userSelect = 'none';
+            document.body.style.cursor = getComputedStyle(h).cursor || 'default';
+            rs.dir = Array.from(h.classList).find(c => /^(t|r|b|l|tl|tr|bl|br)$/.test(c)) || 'br';
+            rs.sx = e.clientX; rs.sy = e.clientY;
+            rs.sl = parseInt(el.style.left || '0', 10) || 0;
+            rs.st = parseInt(el.style.top || '0', 10) || 0;
+            rs.sw = el.offsetWidth;
+            rs.sh = el.offsetHeight;
+            h.setPointerCapture(e.pointerId);
+        });
     });
 
-    resizer.addEventListener('pointerup', () => {
-        resizing = false;
-        window.api.config.save(exportPanelsConfig());
-    });
+    window.addEventListener('pointermove', onResizeMove, true);
+    window.addEventListener('pointerup', endResize, true);
+    window.addEventListener('blur', endResize, true);
+
 
     state.panes.set(id, {
         el,
@@ -1086,8 +1477,9 @@ function refreshPanelList() {
 
         const bClear = document.createElement('button');
         bClear.textContent = '清空';
-        bClear.onclick = () => {
-            if (!confirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`)) return;
+        bClear.onclick = async () => {
+            const ok = await uiConfirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`, { danger: true, okText: '清空' });
+            if (!ok) { safeRefocusInput(); return; }
             const body = pane.el.querySelector('.body');
             body.innerHTML = '';
             pane.logs = [];
@@ -1096,18 +1488,25 @@ function refreshPanelList() {
             pane.hexBuffer = '';
             pane.bodyTextNode = null;
             pane.tailTextNode = null;
+            safeRefocusInput();
         };
+
 
         const bDel = document.createElement('button');
         bDel.textContent = '删除';
         bDel.onclick = async () => {
-            if (!confirm(`确定要删除面板 “${pane.info.name}” 吗？`)) return;
+            const ok = await uiConfirm(`确定要删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
+            if (!ok) { safeRefocusInput(); return; }
             await window.api.serial.close(id);
             pane.el.remove();
             state.panes.delete(id);
+            const idxOrder = state.paneOrder.indexOf(id);
+            if (idxOrder >= 0) state.paneOrder.splice(idxOrder, 1);
+            applyPaneZOrder();
             refreshPanelList();
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
+            safeRefocusInput();
         };
 
         act.append(bClear, bDel);
@@ -1134,8 +1533,9 @@ window.api.serial.onData(({ id, bytes }) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
-        const addText = (withTs ? `[${ts}]\n` : '') + textStr + '\n';
-        const addHex = (withTs ? `[${ts}]\n` : '') + hexStr + '\n';
+        const addText = (withTs ? `[${ts}] ` : '') + textStr;
+        const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
+
 
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
@@ -1151,10 +1551,27 @@ window.api.serial.onData(({ id, bytes }) => {
         if (!g.open) { g.open = true; appendChunk(true); }
         else { appendChunk(false); }
         if (g.timer) clearTimeout(g.timer);
-        g.timer = setTimeout(() => { g.open = false; g.timer = null; }, bufferTime);
+        g.timer = setTimeout(() => {
+            if (!pane.textBuffer.endsWith('\n')) {
+                pane.textBuffer += '\n';
+                pane.hexBuffer += '\n';
+                pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
+                appendTextTail(pane, '\n');
+            }
+            g.open = false;
+            g.timer = null;
+        }, bufferTime);
+
     } else {
         appendChunk(true);
+        if (!pane.textBuffer.endsWith('\n')) {
+            pane.textBuffer += '\n';
+            pane.hexBuffer += '\n';
+            pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
+            appendTextTail(pane, '\n');
+        }
     }
+
 });
 
 
@@ -1212,14 +1629,33 @@ function redrawPane(id) {
 window.api.serial.onEvent((evt) => {
     const pane = state.panes.get(evt.id);
     if (!pane) return;
-    const add = (evt.type === 'close') ? `\n[已关闭]\n` : `\n[错误] ${evt.message}\n`;
-    pane.textBuffer += add;
-    pane.hexBuffer += add;
-    pane.chunks.push({ text: add, hex: add, isEcho: false });
-    trimPane(pane);
-    appendTextTail(pane, add);
-    refreshPanelList();
+
+    let add = '';
+    if (evt.type === 'open') {
+        add = `\n[已打开]\n`;
+        pane.open = true;
+        const btn = pane.el.querySelector('.btnToggle');
+        if (btn) btn.textContent = '关闭串口';
+    } else if (evt.type === 'close') {
+        add = `\n[已关闭]\n`;
+        pane.open = false;
+        if (pane.autoTimer) { clearInterval(pane.autoTimer); pane.autoTimer = null; }
+        const btn = pane.el.querySelector('.btnToggle');
+        if (btn) btn.textContent = '打开串口';
+    } else if (evt.type === 'error') {
+        add = `\n[错误] ${evt.message}\n`;
+    }
+
+    if (add) {
+        pane.textBuffer += add;
+        pane.hexBuffer += add;
+        pane.chunks.push({ text: add, hex: add, isEcho: false });
+        trimPane(pane);
+        appendTextTail(pane, add);
+        refreshPanelList();
+    }
 });
+
 
 
 window.api.panel.onFocusFromPopout(({ id }) => { if (state.panes.has(id)) setActive(id); });
@@ -1262,6 +1698,7 @@ toggleSidebarBtn.addEventListener('click', () => {
     sidebarEl.classList.toggle('open');
     if (!settings.anim) return;
     setTimeout(() => goldenSparksBurst(opening ? +1 : -1), 10);
+    clampAllPanesToWorkspace();
 });
 
 btnNew.addEventListener('click', async () => {
@@ -1293,13 +1730,53 @@ btnRefreshPorts.addEventListener('click', refreshPortsCombo);
 btnSend.addEventListener('click', async () => {
     const id = state.activeId;
     if (!id) return alert('请先选择一个面板');
+
+    const pane = state.panes.get(id);
     const data = inputData.value || '';
     const mode = (hexMode && hexMode.checked) ? 'hex' : 'text';
     const append = appendSel.value;
-    const res = await window.api.serial.write(id, data, mode, append);
-    if (!res.ok) return alert('发送失败：' + res.error);
-    echoIfEnabled(id, data);
+
+    const log = (msg) => {
+        const line = `[系统] ${msg}\n`;
+        pane.textBuffer += line;
+        pane.hexBuffer += line;
+        pane.chunks.push({ text: line, hex: line, isEcho: false });
+        appendTextTail(pane, line);
+    };
+
+    try {
+        if (mode === 'hex') {
+            const clean = (data || '').replace(/[\s,]/g, '');
+            if (clean.length % 2 !== 0) {
+                log('HEX长度必须为偶数');
+                return;
+            }
+        }
+        if (!pane.open) {
+            logToPane(pane, '[错误] 端口未打开，无法发送\n');
+            return;
+        }
+        const res = await window.api.serial.write(id, data, mode, append);
+        if (!res.ok) {
+            log('发送失败：' + res.error);
+            return;
+        }
+        echoIfEnabled(id, data);
+    } finally {
+        const refocus = () => {
+            try {
+                inputData.disabled = false;
+                inputData.readOnly = false;
+                inputData.style.pointerEvents = 'auto';
+                inputData.blur(); inputData.focus();
+                const len = inputData.value.length;
+                inputData.setSelectionRange(len, len);
+            } catch { }
+        };
+        requestAnimationFrame(() => { refocus(); requestAnimationFrame(refocus); });
+    }
 });
+
 
 function attachOptionListeners() {
     const writeOptions = () => {
@@ -1391,14 +1868,15 @@ btnSendFile.addEventListener('click', async () => {
             btnSendFile.blur();
             fileChooser.blur?.();
 
-            requestAnimationFrame(() => {
+            const refocus = () => {
                 try {
-                    inp.blur();
-                    inp.focus();
-                    const len = inp.value.length;
-                    inp.setSelectionRange(len, len);
+                    inp.disabled = false; inp.readOnly = false; inp.style.pointerEvents = 'auto';
+                    inp.blur(); inp.focus();
+                    const len = inp.value.length; inp.setSelectionRange(len, len);
                 } catch { }
-            });
+            };
+            requestAnimationFrame(() => { refocus(); requestAnimationFrame(refocus); });
+
         }
     }
 });
@@ -1412,6 +1890,54 @@ inputData.addEventListener('pointerdown', () => {
         } catch { }
     });
 });
+inputData.addEventListener('click', () => {
+    try {
+        inputData.focus();
+        const len = inputData.value.length;
+        inputData.setSelectionRange(len, len);
+    } catch { }
+}, true);
+
+function safeRefocusInput() {
+    const inp = document.getElementById('inputData');
+    if (!inp || inp.offsetParent === null) return;
+    requestAnimationFrame(() => {
+        try {
+            inp.disabled = false;
+            inp.readOnly = false;
+            inp.style.pointerEvents = 'auto';
+            inp.blur(); inp.focus();
+            const len = inp.value.length;
+            inp.setSelectionRange(len, len);
+        } catch { }
+    });
+}
+
+function forceUnlockUI(opts = {}) {
+    const { closeDialogs = false, refocusInput = true } = opts;
+    try {
+        autoScrollStop();
+        endCmdDrag(true);
+        document.body.style.userSelect = '';
+        document.body.style.cursor = '';
+        document.documentElement.classList.remove('cmd-dragging');
+        document.querySelectorAll('.cmd-drag-float,.cmd-drag-placeholder').forEach(n => n.remove());
+        document.querySelectorAll('[inert]').forEach(n => n.removeAttribute('inert'));
+        try { document.activeElement && document.activeElement.blur(); } catch { }
+        if (closeDialogs) {
+            document.querySelectorAll('dialog[open]').forEach(d => { try { d.close(); } catch { } });
+        }
+        if (refocusInput) {
+            requestAnimationFrame(() => {
+                try { window.focus(); } catch { }
+                requestAnimationFrame(() => {
+                    try { window.focus(); } catch { }
+                    safeRefocusInput();
+                });
+            });
+        }
+    } catch { }
+}
 
 function isDraggingFiles(e) {
     const types = Array.from(e.dataTransfer?.types || []);
@@ -1554,16 +2080,21 @@ cmdNext.addEventListener('click', () => {
     renderCmdGrid();
 });
 
-cmdEditPage.addEventListener('click', () => {
-    cmdTableBody.innerHTML = '';
-    state.commands.forEach((cmd) => {
-        cmdTableBody.appendChild(makeCmdRow(cmd));
-    });
-    dlgCmdEdit.showModal();
-});
-
 function makeCmdRow(cmd) {
     const tr = document.createElement('tr');
+    tr.dataset.id = cmd.id;
+
+    const tdDrag = document.createElement('td');
+    tdDrag.className = 'drag cmd-cell-drag';
+    const handle = document.createElement('span');
+    handle.className = 'cmd-drag-handle'; handle.textContent = '≡'; handle.title = '拖拽排序';
+    tdDrag.appendChild(handle);
+
+    const tdSel = document.createElement('td'); tdSel.className = 'sel';
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.className = 'rowSel'; chk.dataset.id = cmd.id;
+    tdSel.appendChild(chk);
+    chk.addEventListener('change', updateDeleteSelectedBtn);
 
     const tdName = document.createElement('td');
     const inputName = document.createElement('input');
@@ -1587,14 +2118,21 @@ function makeCmdRow(cmd) {
     const tdOp = document.createElement('td');
     const btnDel = document.createElement('button');
     btnDel.textContent = '删除';
-    btnDel.onclick = () => {
-        if (!confirm(`删除命令：${cmd.name || '(未命名)'} ?`)) return;
+    btnDel.onclick = async () => {
+        const ok = await uiConfirm(`删除命令：${cmd.name || '(未命名)'} ?`, { danger: true, okText: '删除' });
+        if (!ok) { updateDeleteSelectedBtn(); safeRefocusInput(); return; }
         state.commands = state.commands.filter(c => c.id !== cmd.id);
         tr.remove();
+        updateDeleteSelectedBtn();
+        safeRefocusInput();
     };
     tdOp.appendChild(btnDel);
 
-    tr.append(tdName, tdData, tdMode, tdOp);
+    tr.append(tdDrag, tdSel, tdName, tdData, tdMode, tdOp);
+    tdDrag.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0) return;
+        startCmdDrag(e, tr, tdDrag);
+    });
     return tr;
 }
 
@@ -1604,12 +2142,15 @@ cmdAdd.addEventListener('click', () => {
     cmdTableBody.appendChild(makeCmdRow(newCmd));
 });
 
-cmdCancel.addEventListener('click', () => dlgCmdEdit.close());
 cmdSave.addEventListener('click', () => {
     saveCommands();
     dlgCmdEdit.close();
     renderCmdGrid();
+    forceUnlockUI({ closeDialogs: false, refocusInput: true });
+    commandsSnapshot = JSON.parse(JSON.stringify(state.commands));
 });
+
+
 
 function saveCommands() { window.api.commands.save(state.commands); }
 async function loadCommands() {
@@ -1659,6 +2200,36 @@ function adjustPanesAwayFromTop(safeTop) {
         if (top < val) el.style.top = val + 'px';
     });
 }
+function clampAllPanesToWorkspace() {
+    const ws = document.getElementById('workspace');
+    if (!ws) return;
+    const wsW = ws.clientWidth;
+    const wsH = ws.clientHeight;
+    const sideW = sidebarEl?.offsetWidth || SIDEBAR_COLLAPSED_W;
+    const leftMin = sideW + LEFT_GUTTER;
+
+    document.querySelectorAll('.pane').forEach(el => {
+        let left = parseInt(el.style.left || '0', 10) || 0;
+        let top = parseInt(el.style.top || '0', 10) || 0;
+        let w = el.offsetWidth;
+        let h = el.offsetHeight;
+
+        const maxLeft = Math.max(leftMin, wsW - w);
+        const maxTop = Math.max(0, wsH - h);
+
+        if (left < leftMin) left = leftMin;
+        if (left > maxLeft) left = maxLeft;
+        if (top < 0) top = 0;
+        if (top > maxTop) top = maxTop;
+
+        if (w > wsW - leftMin) { w = wsW - leftMin; el.style.width = w + 'px'; }
+        if (h > wsH) { h = wsH; el.style.height = h + 'px'; }
+
+        el.style.left = left + 'px';
+        el.style.top = top + 'px';
+    });
+    window.api.config.save(exportPanelsConfig());
+}
 
 // ===== 启动初始化 =====
 (async function init() {
@@ -1671,7 +2242,7 @@ function adjustPanesAwayFromTop(safeTop) {
     await loadCommands();
     document.getElementById('echoSend').checked = true;
     renderCmdGrid();
-    window.addEventListener('resize', () => renderCmdGrid());
+    window.addEventListener('resize', () => { renderCmdGrid(); clampAllPanesToWorkspace(); });
 
     const navButtons = document.querySelectorAll('#bottomNav button');
     const pages = document.querySelectorAll('#bottomContent .page');
@@ -1686,4 +2257,96 @@ function adjustPanesAwayFromTop(safeTop) {
         });
     });
     navButtons[0].classList.add('active');
+
+    const dlgCmdEdit = document.getElementById('dlgCmdEdit');
+    const cmdCancel = document.getElementById('cmdCancel');
+
+    if (dlgCmdEdit && dlgCmdEdit.hasAttribute('open')) dlgCmdEdit.close();
+
+    dlgCmdEdit?.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            attemptCloseCmdEditor('esc');
+        }
+    });
+    dlgCmdEdit?.addEventListener('close', () => {
+        forceUnlockUI({ closeDialogs: false, refocusInput: true });
+        renderCmdGrid();
+    });
+
+    dlgCmdEdit?.addEventListener('cancel', (e) => {
+        e.preventDefault();
+        attemptCloseCmdEditor('backdrop');
+        endCmdDrag(true);
+    });
+
+    function openCmdEditor() {
+        endCmdDrag(true);
+        try { dlgCmdEdit.close(); } catch { }
+        cmdSelectAll.checked = false;
+        commandsSnapshot = JSON.parse(JSON.stringify(state.commands));
+        cmdTableBody.innerHTML = '';
+        state.commands.forEach((cmd) => cmdTableBody.appendChild(makeCmdRow(cmd)));
+        dlgCmdEdit.showModal();
+        updateDeleteSelectedBtn();
+    }
+    cmdEditPage.addEventListener('click', openCmdEditor);
+
+    async function attemptCloseCmdEditor(reason = 'cancel') {
+        const dlg = document.getElementById('dlgCmdEdit');
+        const changed = JSON.stringify(state.commands) !== JSON.stringify(commandsSnapshot);
+        if (changed) {
+            const giveup = await uiConfirm('检测到未保存的修改。是否放弃这些改动并返回？', { okText: '放弃修改', cancelText: '继续编辑' });
+            if (!giveup) return false;
+            state.commands = JSON.parse(JSON.stringify(commandsSnapshot));
+            saveCommands();
+            renderCmdGrid();
+        }
+        try { dlg.close(); } catch { }
+        safeRefocusInput();
+        return true;
+    }
+    cmdCancel?.addEventListener('click', (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        attemptCloseCmdEditor('cancelBtn');
+    });
+
+
+    function getDragAfterRow(container, mouseY) {
+        const els = [...container.querySelectorAll('tr:not(.dragging)')];
+        let closest = { offset: Number.NEGATIVE_INFINITY, element: null };
+        for (const el of els) {
+            const box = el.getBoundingClientRect();
+            const offset = mouseY - box.top - box.height / 2;
+            if (offset < 0 && offset > closest.offset) closest = { offset, element: el };
+        }
+        return closest.element;
+    }
+
+    cmdSelectAll?.addEventListener('change', () => {
+        cmdTableBody.querySelectorAll('.rowSel').forEach(ch => ch.checked = cmdSelectAll.checked);
+        updateDeleteSelectedBtn();
+    });
+
+    document.getElementById('cmdDeleteSel')?.addEventListener('click', async () => {
+        const ids = Array.from(cmdTableBody.querySelectorAll('.rowSel:checked')).map(ch => ch.dataset.id);
+        if (ids.length === 0) { updateDeleteSelectedBtn(); return; }
+        const ok = await uiConfirm(`确认删除选中的 ${ids.length} 条命令？`, { danger: true, okText: '删除' });
+        if (!ok) { updateDeleteSelectedBtn(); safeRefocusInput(); return; }
+
+        state.commands = state.commands.filter(c => !ids.includes(c.id));
+        ids.forEach(id => cmdTableBody.querySelector(`tr[data-id="${id}"]`)?.remove());
+        if (cmdSelectAll) cmdSelectAll.checked = false;
+        updateDeleteSelectedBtn();
+        safeRefocusInput();
+    });
+
+    window.addEventListener('focus', () => setTimeout(safeRefocusInput, 0));
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) setTimeout(safeRefocusInput, 0);
+    });
+
+    updateDeleteSelectedBtn();
+
 })();

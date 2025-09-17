@@ -15,13 +15,20 @@ const commandsPath = path.join(app.getPath('userData'), 'commands.json');
 const scriptsDir = path.join(app.getPath('userData'), 'scripts');
 
 // ========== 工具 ==========
+function shouldSuppressPortError(entry, err) {
+  if (!entry) return true;
+  if (entry.suppressErrorUntil && Date.now() < entry.suppressErrorUntil) return true;
+  const msg = String(err?.message || '').toLowerCase();
+  if (msg.includes('port is not open')) return true;
+  return false;
+}
 function loadJsonSafe(file, fallback) {
   try { return JSON.parse(fs.readFileSync(file, 'utf-8')); } catch { return fallback; }
 }
 function saveJsonSafe(file, data) {
   try { fs.writeFileSync(file, JSON.stringify(data, null, 2), 'utf-8'); } catch (e) { console.error(e); }
 }
-function ensureScriptsDir() { try { fs.mkdirSync(scriptsDir, { recursive: true }); } catch {} }
+function ensureScriptsDir() { try { fs.mkdirSync(scriptsDir, { recursive: true }); } catch { } }
 function safeScriptName(name) {
   name = String(name || '').trim().replace(/[/\\]/g, '');
   if (!name.endsWith('.js')) name += '.js';
@@ -87,8 +94,8 @@ function removeScriptWatcher(runId) {
 }
 function notifyScriptWatchers(portId, buf) {
   const m = scriptWatchers.get(portId); if (!m) return;
-  const payload = { bytes: Uint8Array.from(buf), text: (()=>{ try{return buf.toString('utf8')}catch{return''} })() };
-  for (const fn of m.values()) try { fn(payload); } catch {}
+  const payload = { bytes: Uint8Array.from(buf), text: (() => { try { return buf.toString('utf8') } catch { return '' } })() };
+  for (const fn of m.values()) try { fn(payload); } catch { }
 }
 
 // ========== IPC ==========
@@ -101,20 +108,82 @@ ipcMain.handle('serial:list', async () => (await SerialPort.list()).map(i => ({
   path: i.path, manufacturer: i.manufacturer || '', serialNumber: i.serialNumber || '', friendlyName: i.friendlyName || i.pnpId || ''
 })));
 ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
-  const id = getPortId(p); if (ports.has(id)) { ports.get(id).options = options; return { ok: true, id, alreadyOpen: true }; }
-  return new Promise(res => {
-    const port = new SerialPort({ path: p, baudRate: options.baudRate||115200, dataBits: options.dataBits||8, stopBits: options.stopBits||1, parity: options.parity||'none' }, err => { if (err) res({ ok: false, error: err.message }); });
-    port.on('data', b => { BrowserWindow.getAllWindows().forEach(w => w.webContents.send('serial:data',{id,base64:b.toString('base64'),ts:Date.now()})); notifyScriptWatchers(id,b); });
-    port.on('close',()=>{ BrowserWindow.getAllWindows().forEach(w=>w.webContents.send('serial:event',{id,type:'close'})); ports.delete(id); });
-    port.on('error',e=>BrowserWindow.getAllWindows().forEach(w=>w.webContents.send('serial:event',{id,type:'error',message:e.message})));
-    ports.set(id,{port,options}); res({ok:true,id});
+  const id = getPortId(p);
+  if (ports.has(id)) {
+    ports.get(id).options = options;
+    return { ok: true, id, alreadyOpen: true };
+  }
+
+  return await new Promise((resolve) => {
+    const port = new SerialPort({
+      path: p,
+      baudRate: options.baudRate || 115200,
+      dataBits: options.dataBits || 8,
+      stopBits: options.stopBits || 1,
+      parity: options.parity || 'none',
+      autoOpen: false
+    });
+
+    const sendAll = (ch, payload) =>
+      BrowserWindow.getAllWindows().forEach(w => w.webContents.send(ch, payload));
+
+    let done = false;
+    const finish = (r) => { if (!done) { done = true; resolve(r); } };
+
+    port.once('open', () => {
+      port.on('data', b => {
+        sendAll('serial:data', { id, base64: Buffer.from(b).toString('base64'), ts: Date.now() });
+        notifyScriptWatchers(id, b);
+      });
+      port.on('close', () => {
+        sendAll('serial:event', { id, type: 'close' });
+        ports.delete(id);
+      });
+      port.on('error', e => {
+        const ent = ports.get(id);
+        if (shouldSuppressPortError(ent, e)) return;
+        sendAll('serial:event', { id, type: 'error', message: e?.message || String(e) });
+      });      
+
+      ports.set(id, { port, options });
+      sendAll('serial:event', { id, type: 'open' });
+      finish({ ok: true, id });
+    });
+
+    port.once('error', (err) => {
+      finish({ ok: false, error: err?.message || String(err) });
+    });
+
+    const to = setTimeout(() => {
+      if (!port.isOpen) {
+        try { port.close(); } catch {}
+        finish({ ok: false, error: 'OPEN_TIMEOUT' });
+      }
+    }, 2500);
+
+    port.open((err) => { if (err) { clearTimeout(to); finish({ ok:false, error: err.message }); } });
   });
 });
-ipcMain.handle('serial:close', async (_e,{id})=>{
-  const e=ports.get(id); if(!e) return {ok:true,notOpen:true};
-  return new Promise(r=>e.port.close(err=>{ if(err) return r({ok:false,error:err.message}); ports.delete(id); r({ok:true}); }));
+ipcMain.handle('serial:close', async (_e, { id }) => {
+  const entry = ports.get(id);
+  if (!entry) return { ok: true, notOpen: true };
+
+  entry.suppressErrorUntil = Date.now() + 800;
+
+  if (entry.port && entry.port.isOpen === false) {
+    ports.delete(id);
+    return { ok: true, notOpen: true };
+  }
+  return await new Promise((resolve) => {
+    entry.port.close((err) => {
+      if (err) return resolve({ ok: false, error: err.message });
+      resolve({ ok: true });
+    });
+  });
 });
-ipcMain.handle('serial:write', async (_e,a)=>writeToSerial(a.id,a.data,a.mode,a.append));
+
+
+ipcMain.handle('serial:write', async (_e, a) => writeToSerial(a.id, a.data, a.mode, a.append));
 ipcMain.handle('file:readHex', (_e, filePath) => {
   try {
     const buf = fs.readFileSync(filePath);
@@ -123,44 +192,58 @@ ipcMain.handle('file:readHex', (_e, filePath) => {
     return { error: err.message || String(err) };
   }
 });
-ipcMain.on('window:set-fullscreen',(_e,{flag})=>mainWindow?.setFullScreen(!!flag));
-ipcMain.on('window:toggle-fullscreen',()=>mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
-ipcMain.on('theme:set',(_e,{dark})=>{
-  if(process.platform==='win32'&&mainWindow?.setTitleBarOverlay)try{mainWindow.setTitleBarOverlay({color:dark?'#0D1218':'#f5f7fa',symbolColor:dark?'#E6E9EF':'#1f2937',height:30})}catch{}
+ipcMain.on('window:set-fullscreen', (_e, { flag }) => mainWindow?.setFullScreen(!!flag));
+ipcMain.on('window:toggle-fullscreen', () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
+ipcMain.on('theme:set', (_e, { dark }) => {
+  if (process.platform === 'win32' && mainWindow?.setTitleBarOverlay) {
+    try {
+      mainWindow.setTitleBarOverlay({
+        color: dark ? '#0D1218' : '#f5f7fa',
+        symbolColor: dark ? '#E6E9EF' : '#1f2937',
+        height: 30
+      });
+    } catch { }
+  }
+  BrowserWindow.getAllWindows().forEach(w => w.webContents.send('theme:apply', { dark }));
 });
 
-ipcMain.handle('panel:saveLog',async(_e,{name,content})=>{
-  const {canceled,filePath}=await dialog.showSaveDialog({title:'保存面板数据',defaultPath:`${name||'panel'}.txt`,filters:[{name:'文本文件',extensions:['txt']}]});
-  if(canceled||!filePath) return {ok:false,canceled:true};
-  try{fs.writeFileSync(filePath,content,'utf-8'); return {ok:true,filePath};}catch(e){return{ok:false,error:e.message};}
-});
-ipcMain.handle('panel:popout',(_e,{id,title,html})=>{
-  if(!mainWindow) return {ok:false,error:'MAIN_WINDOW_MISSING'};
-  const win=new BrowserWindow({width:600,height:420,alwaysOnTop:true,frame:false,resizable:true,webPreferences:{preload:path.join(__dirname,'preload.js'),contextIsolation:true}});
-  win.loadFile('panel.html',{query:{id,title}});
-  win.webContents.once('did-finish-load',()=>win.webContents.send('panel:loadContent',{id,html}));
-  win.on('focus',()=>mainWindow?.webContents.send('panel:focus',{id}));
-  return {ok:true};
-});
-ipcMain.on('panel:request-dock',(_e,{id,html})=>mainWindow?.webContents.send('panel:dock',{id,html}));
 
-ipcMain.handle('scripts:dir',()=>scriptsDir);
-ipcMain.handle('scripts:list',()=>{ ensureScriptsDir(); return fs.readdirSync(scriptsDir).filter(f=>f.endsWith('.js')); });
-ipcMain.handle('scripts:read',(_e,n)=>{ const f=path.join(scriptsDir,safeScriptName(n)); return fs.existsSync(f)?fs.readFileSync(f,'utf-8'):''; });
-ipcMain.handle('scripts:write',(_e,{name,content})=>{ fs.writeFileSync(path.join(scriptsDir,safeScriptName(name)),String(content??''),'utf-8'); return {ok:true}; });
-ipcMain.handle('scripts:delete',(_e,n)=>{ const f=path.join(scriptsDir,safeScriptName(n)); if(fs.existsSync(f)) fs.unlinkSync(f); return {ok:true}; });
-ipcMain.handle('scripts:run',(e,{code,ctx})=>{
-  const runId=randomUUID(); const logs=[]; const token={aborted:false,timers:new Set()}; runningScripts.set(runId,token);
-  const sandbox={console:{log:(...a)=>logs.push(a.join(' '))},sleep:ms=>new Promise((r,j)=>{const t=setTimeout(()=>token.aborted?j(new Error('ABORTED')):r(),Number(ms)||0);token.timers.add(t);}),
-    send:async(d,m='text',a='none')=>{if(token.aborted)throw new Error('ABORTED');const r=await writeToSerial(ctx.id,d,m,a);if(!r.ok)throw new Error(r.error);return r;},
-    onData:h=>typeof h==='function'&&addScriptWatcher(ctx.id,runId,h),shouldStop:()=>token.aborted};
-  (async()=>{try{await new vm.Script(`(async()=>{${code||''}})()`).runInContext(vm.createContext(sandbox)); e.sender.send('scripts:ended',{runId,ok:true,logs});}
-    catch(err){logs.push('[ERROR] '+(err?.message||String(err))); e.sender.send('scripts:ended',{runId,ok:false,error:err?.message,logs});}
-    finally{token.timers.forEach(clearTimeout); runningScripts.delete(runId); removeScriptWatcher(runId);}})();
-  return {ok:true,runId};
+ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
+  const { canceled, filePath } = await dialog.showSaveDialog({ title: '保存面板数据', defaultPath: `${name || 'panel'}.txt`, filters: [{ name: '文本文件', extensions: ['txt'] }] });
+  if (canceled || !filePath) return { ok: false, canceled: true };
+  try { fs.writeFileSync(filePath, content, 'utf-8'); return { ok: true, filePath }; } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('scripts:stop',(_e,{runId})=>{const t=runningScripts.get(runId); if(!t) return {ok:false,error:'NOT_RUNNING'}; t.aborted=true; removeScriptWatcher(runId); return {ok:true};});
+ipcMain.handle('panel:popout', (_e, { id, title, html }) => {
+  if (!mainWindow) return { ok: false, error: 'MAIN_WINDOW_MISSING' };
+  const win = new BrowserWindow({ width: 600, height: 420, alwaysOnTop: true, frame: false, resizable: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
+  win.loadFile('panel.html', { query: { id, title } });
+  win.webContents.once('did-finish-load', () => win.webContents.send('panel:loadContent', { id, html }));
+  win.on('focus', () => mainWindow?.webContents.send('panel:focus', { id }));
+  return { ok: true };
+});
+ipcMain.on('panel:request-dock', (_e, { id, html }) => mainWindow?.webContents.send('panel:dock', { id, html }));
+
+ipcMain.handle('scripts:dir', () => scriptsDir);
+ipcMain.handle('scripts:list', () => { ensureScriptsDir(); return fs.readdirSync(scriptsDir).filter(f => f.endsWith('.js')); });
+ipcMain.handle('scripts:read', (_e, n) => { const f = path.join(scriptsDir, safeScriptName(n)); return fs.existsSync(f) ? fs.readFileSync(f, 'utf-8') : ''; });
+ipcMain.handle('scripts:write', (_e, { name, content }) => { fs.writeFileSync(path.join(scriptsDir, safeScriptName(name)), String(content ?? ''), 'utf-8'); return { ok: true }; });
+ipcMain.handle('scripts:delete', (_e, n) => { const f = path.join(scriptsDir, safeScriptName(n)); if (fs.existsSync(f)) fs.unlinkSync(f); return { ok: true }; });
+ipcMain.handle('scripts:run', (e, { code, ctx }) => {
+  const runId = randomUUID(); const logs = []; const token = { aborted: false, timers: new Set() }; runningScripts.set(runId, token);
+  const sandbox = {
+    console: { log: (...a) => logs.push(a.join(' ')) }, sleep: ms => new Promise((r, j) => { const t = setTimeout(() => token.aborted ? j(new Error('ABORTED')) : r(), Number(ms) || 0); token.timers.add(t); }),
+    send: async (d, m = 'text', a = 'none') => { if (token.aborted) throw new Error('ABORTED'); const r = await writeToSerial(ctx.id, d, m, a); if (!r.ok) throw new Error(r.error); return r; },
+    onData: h => typeof h === 'function' && addScriptWatcher(ctx.id, runId, h), shouldStop: () => token.aborted
+  };
+  (async () => {
+    try { await new vm.Script(`(async()=>{${code || ''}})()`).runInContext(vm.createContext(sandbox)); e.sender.send('scripts:ended', { runId, ok: true, logs }); }
+    catch (err) { logs.push('[ERROR] ' + (err?.message || String(err))); e.sender.send('scripts:ended', { runId, ok: false, error: err?.message, logs }); }
+    finally { token.timers.forEach(clearTimeout); runningScripts.delete(runId); removeScriptWatcher(runId); }
+  })();
+  return { ok: true, runId };
+});
+ipcMain.handle('scripts:stop', (_e, { runId }) => { const t = runningScripts.get(runId); if (!t) return { ok: false, error: 'NOT_RUNNING' }; t.aborted = true; removeScriptWatcher(runId); return { ok: true }; });
 
 // ========== 生命周期 ==========
-app.whenReady().then(()=>{ensureScriptsDir();createMainWindow();app.on('activate',()=>{if(BrowserWindow.getAllWindows().length===0)createMainWindow();});});
-app.on('window-all-closed',()=>{ports.forEach(({port})=>{try{port.close();}catch{}}); if(process.platform!=='darwin')app.quit();});
+app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
+app.on('window-all-closed', () => { ports.forEach(({ port }) => { try { port.close(); } catch { } }); if (process.platform !== 'darwin') app.quit(); });
