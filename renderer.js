@@ -17,12 +17,18 @@ const dlgSettings = document.getElementById('dlgSettings');
 const settingsClose = document.getElementById('settingsClose');
 const settingsOk = document.getElementById('settingsOk');
 const fullscreenToggle = $('#fullscreenToggle');
+const animExtremeToggle = document.getElementById('animExtremeToggle');
 const nightToggle = $('#nightToggle');
 const animToggle = $('#animToggle');
 const LOG_MAX_CHARS = 1000000;
 const cmdDeleteSel = $('#cmdDeleteSel');
 const cmdTableBody = document.getElementById('cmdTableBody');
 const cmdSelectAll = document.getElementById('cmdSelectAll');
+const useTcp = $('#useTcp');
+const tcpFields = $('#tcpFields');
+const serialFields = $('#serialFields');
+const tcpHost = $('#tcpHost');
+const tcpPort = $('#tcpPort');
 let commandsSnapshot = null;
 let CMD_DND = {
     active: false,
@@ -232,7 +238,7 @@ function startCmdDrag(e, tr, handle) {
     CMD_DND.offsetX = e.clientX - rect.left;
     CMD_DND.offsetY = e.clientY - rect.top;
     CMD_DND.lastIndex = -1;
-
+    CMD_DND.rowH = rect.height;
     document.body.classList.add('cmd-dragging');
 
     const ph = document.createElement('tr');
@@ -245,15 +251,34 @@ function startCmdDrag(e, tr, handle) {
     float.className = 'cmd-drag-float';
     float.style.width = rect.width + 'px';
 
-    // 在对话框内部绝对定位，坐标相对对话框
     const host = document.getElementById('dlgCmdEdit') || document.body;
     const hostRect = host.getBoundingClientRect();
     CMD_DND.hostEl = host;
     CMD_DND.hostRect = hostRect;
 
-    // 初始就放到鼠标处（对话框坐标系）
-    float.style.left = (e.clientX - hostRect.left - CMD_DND.offsetX) + 'px';
-    float.style.top  = (e.clientY - hostRect.top  - CMD_DND.offsetY) + 'px';
+    CMD_DND.baseLeft = rect.left - hostRect.left;
+
+    const wrap = document.querySelector('#dlgCmdEdit .cmd-table-wrap');
+    const rows = Array.from(cmdTableBody.querySelectorAll('tr')).filter(r => r !== ph);
+    let topLimitAbs, bottomLimitAbs;
+    if (rows.length) {
+        const firstRect = rows[0].getBoundingClientRect();
+        const lastRect = rows[rows.length - 1].getBoundingClientRect();
+        topLimitAbs = firstRect.top;
+        bottomLimitAbs = lastRect.bottom;
+    } else {
+        const wr = (wrap ? wrap.getBoundingClientRect() : hostRect);
+        topLimitAbs = wr.top;
+        bottomLimitAbs = wr.bottom;
+    }
+    CMD_DND.boundsY = {
+        top: topLimitAbs - hostRect.top,
+        bottom: bottomLimitAbs - hostRect.top
+    };
+    CMD_DND.boundsAbs = { top: topLimitAbs, bottom: bottomLimitAbs };
+
+    float.style.left = Math.round(CMD_DND.baseLeft) + 'px';
+    float.style.top = Math.round(e.clientY - hostRect.top - CMD_DND.offsetY) + 'px';
     float.style.zIndex = '2147483647';
 
     const table = document.createElement('table');
@@ -286,20 +311,34 @@ function startCmdDrag(e, tr, handle) {
 function moveCmdDrag(e) {
     CMD_DND.lastMouseY = e.clientY;
     autoScrollCheck(e.clientY);
-    if (!CMD_DND.active) return; 
+    if (!CMD_DND.active) return;
+
     let hostRect = CMD_DND.hostRect;
     if (!hostRect || !CMD_DND.hostEl) {
         CMD_DND.hostEl = document.getElementById('dlgCmdEdit') || document.body;
         hostRect = CMD_DND.hostEl.getBoundingClientRect();
         CMD_DND.hostRect = hostRect;
     }
-    const nx = e.clientX - hostRect.left - CMD_DND.offsetX;
-    const ny = e.clientY - hostRect.top  - CMD_DND.offsetY;
+
+    const nx = CMD_DND.baseLeft;
+
+    let ny = e.clientY - hostRect.top - CMD_DND.offsetY;
+
+    const minY = (CMD_DND.boundsY && Number.isFinite(CMD_DND.boundsY.top)) ? CMD_DND.boundsY.top : ny;
+    const maxY = (CMD_DND.boundsY && Number.isFinite(CMD_DND.boundsY.bottom)) ? (CMD_DND.boundsY.bottom - (CMD_DND.rowH || 0)) : ny;
+    ny = Math.max(minY, Math.min(maxY, ny));
+
     CMD_DND.floatEl.style.left = Math.round(nx) + 'px';
-    CMD_DND.floatEl.style.top  = Math.round(ny) + 'px';
-    const idx = calcInsertIndex(e.clientY);
+    CMD_DND.floatEl.style.top = Math.round(ny) + 'px';
+
+    const cy = Math.max(
+        (CMD_DND.boundsAbs?.top ?? e.clientY) + 1,
+        Math.min(e.clientY, (CMD_DND.boundsAbs?.bottom ?? e.clientY) - 1)
+    );
+    const idx = calcInsertIndex(cy);
     placePlaceholderAt(idx);
 }
+
 
 function endCmdDrag(force = false) {
     if (!CMD_DND.active && !force) return;
@@ -347,6 +386,7 @@ function loadSettings() {
             fullscreen: !!s.fullscreen,
             dark: !!s.dark,
             anim: !!s.anim,
+            animExtreme: !!s.animExtreme,
         };
     } catch { return { mute: false, dark: false, anim: false }; }
 }
@@ -368,6 +408,7 @@ btnSettings.addEventListener('click', () => {
     if (fullscreenToggle) fullscreenToggle.checked = !!settings.fullscreen;
     if (nightToggle) nightToggle.checked = !!settings.dark;
     if (animToggle) animToggle.checked = !!settings.anim;
+    if (animExtremeToggle) animExtremeToggle.checked = !!settings.animExtreme;
     dlgSettings.showModal();
 });
 settingsClose.addEventListener('click', () => dlgSettings.close());
@@ -383,9 +424,20 @@ if (nightToggle) nightToggle.addEventListener('change', () => {
 if (animToggle) animToggle.addEventListener('change', () => {
     settings.anim = animToggle.checked; saveSettings(); applyFx(settings.anim);
 });
+if (animExtremeToggle) {
+    animExtremeToggle.addEventListener('change', () => {
+        settings.animExtreme = animExtremeToggle.checked;
+        saveSettings();
+    });
+}
 // ===== 动画 & 粒子效果 =====
 let fxLayer = null;
+let fxEmitActive = 0;
+let fxPile = null; // { left, right, baseY, binW, count, heights: Float32Array }
 let fxCanvas, fxCtx, fxDPR = 1, fxRunning = false, fxParticles = [];
+let fxLastEmitAt = 0;
+const FX_HOLD_AFTER_EMIT_MS = 3000;
+const FX_FADE_MS_EXTREME = 1600;
 function ensureFxLayer() {
     if (!fxLayer) {
         fxLayer = document.getElementById('fxLayer');
@@ -448,35 +500,116 @@ function ensureFxCanvas() {
     }
 }
 function startFxLoop() {
+    ensureFxCanvas();
     if (fxRunning) return;
     fxRunning = true;
+
     let last = performance.now();
+
     const loop = (now) => {
         if (!fxRunning) return;
+
         const dt = Math.min(0.033, (now - last) / 1000);
         last = now;
+
+        // 画布复位 & 清屏
         fxCtx.setTransform(fxDPR, 0, 0, fxDPR, 0, 0);
         fxCtx.clearRect(0, 0, fxCanvas.width / fxDPR, fxCanvas.height / fxDPR);
+
+        // 边界
         const bp = document.getElementById('bottomPanel')?.getBoundingClientRect();
+        const wsr = document.getElementById('workspace')?.getBoundingClientRect();
         const landY = (bp ? bp.top : window.innerHeight - 190);
-        const g = 1800; // px/s^2
+        const boundLeft = wsr ? wsr.left : 0;
+        const boundRight = wsr ? wsr.right : window.innerWidth;
+        const boundTop = wsr ? wsr.top : 0;
+
+        // 仅在“更惊人的动画”开启时启用堆栈
+        if (settings.animExtreme) {
+            const binW = 4;
+            const pileLeft = boundLeft;
+            const pileRight = boundRight;
+            const count = Math.max(1, Math.floor((pileRight - pileLeft) / binW));
+            if (!fxPile || fxPile.count !== count || fxPile.left !== pileLeft || fxPile.right !== pileRight || fxPile.baseY !== landY) {
+                fxPile = {
+                    left: pileLeft,
+                    right: pileRight,
+                    baseY: landY,
+                    binW,
+                    count,
+                    heights: new Float32Array(count)
+                };
+            }
+        } else {
+            fxPile = null;
+        }
+
+        // —— 极致模式的“统一延时淡出”判定 —— 
+        const extremeHold = settings.animExtreme && (fxEmitActive > 0 || (now - fxLastEmitAt < FX_HOLD_AFTER_EMIT_MS));
+        const extremeFadeT = Math.max(0, now - (fxLastEmitAt + FX_HOLD_AFTER_EMIT_MS)); // 距开始淡出的毫秒数
+        const extremeFadeK = settings.animExtreme
+            ? Math.max(0, 1 - (extremeFadeT / FX_FADE_MS_EXTREME))
+            : 1; // 1→0
+
+        const g = 1800;
+
         fxParticles = fxParticles.filter(p => {
             if (!p.landed) {
+                // 受力
                 p.vy += g * dt;
                 p.x += p.vx * dt;
                 p.y += p.vy * dt;
-                if (p.y + p.size >= landY) {
-                    p.y = landY - p.size;
-                    p.vy = 0;
-                    p.landed = true;
-                    p.landTime = now;
+
+                // 左/右/上反弹
+                if (p.x - p.size < boundLeft) { p.x = boundLeft + p.size; p.vx = -p.vx * 0.55; }
+                if (p.x + p.size > boundRight) { p.x = boundRight - p.size; p.vx = -p.vx * 0.55; }
+                if (p.y - p.size < boundTop) { p.y = boundTop + p.size; p.vy = -p.vy * 0.55; }
+
+                // 触底
+                if (p.y + p.size >= landY - 0.5) {
+                    if (settings.animExtreme && fxPile) {
+                        const idx = Math.max(0, Math.min(fxPile.count - 1, Math.floor((p.x - fxPile.left) / fxPile.binW)));
+                        const hC = fxPile.heights[idx] || 0;
+                        const hL = idx > 0 ? fxPile.heights[idx - 1] : hC;
+                        const hR = idx < fxPile.count - 1 ? fxPile.heights[idx + 1] : hC;
+                        const avgNeighbor = (hL + hC + hR) / 3;
+                        const packing = 1.05;
+                        const newTopH = Math.max(hC, avgNeighbor) + p.size * packing;
+
+                        p.y = fxPile.baseY - newTopH + p.size * (packing - 1);
+                        p.vy = 0;
+                        p.vx = 0;              // 极致模式：落地即静止，不再漂移
+                        p.landed = true;
+                        p.landTime = now;
+                        fxPile.heights[idx] = newTopH;
+                    } else {
+                        p.y = landY - p.size;
+                        p.vy = 0;
+                        p.landed = true;
+                        p.landTime = now;
+                    }
                 }
             } else {
-                p.vx *= 0.94;
-                p.x += p.vx * dt;
-                const t = (now - p.landTime) / 1000;
-                p.alpha = Math.max(0, 1 - t / 1.0);
+                // —— 已着陆 —— 
+                if (settings.animExtreme) {
+                    // 极致模式：静止堆积，不做水平滑移
+                    p.vx = 0; // 防御式清零
+                    // 延时淡出：最后一次发射 3 秒内不降 alpha，之后统一按极致淡出曲线
+                    p.alpha = extremeHold ? 1 : extremeFadeK;
+
+                } else {
+                    // 普通模式：略微滑移 + 个人淡出
+                    p.vx *= 0.92;
+                    p.x += p.vx * dt;
+                    if (p.x - p.size < boundLeft) p.x = boundLeft + p.size;
+                    if (p.x + p.size > boundRight) p.x = boundRight - p.size;
+
+                    const t = (now - p.landTime) / 1000;
+                    p.alpha = Math.max(0, 1 - t / 1.0);
+                }
             }
+
+            // 绘制（落地后不画长尾，避免“漂浮感”）
             const grd = fxCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 1.6);
             grd.addColorStop(0, `rgba(255,220,130,${0.9 * p.alpha})`);
             grd.addColorStop(0.5, `rgba(255,190,70,${0.7 * p.alpha})`);
@@ -485,12 +618,9 @@ function startFxLoop() {
             fxCtx.beginPath();
             fxCtx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
             fxCtx.fill();
-            let tailK = 1;
-            if (p.landed) {
-                const t150 = (now - p.landTime) / 150;
-                tailK = Math.max(0, 1 - t150);
-            }
-            if (tailK > 0.02) {
+
+            if (!p.landed) {
+                const tailK = 1;
                 fxCtx.strokeStyle = `rgba(255,200,80,${0.8 * p.alpha * tailK})`;
                 fxCtx.lineWidth = Math.max(1, p.size * 0.4 * tailK);
                 fxCtx.beginPath();
@@ -498,16 +628,22 @@ function startFxLoop() {
                 fxCtx.lineTo(p.x, p.y);
                 fxCtx.stroke();
             }
+
+            // 存活
             return p.alpha > 0 && p.x > -50 && p.x < window.innerWidth + 50;
         });
-        if (fxParticles.length === 0) {
-            fxRunning = false;
-            return;
-        }
+
+        // 全部消失 → 关闭循环并重置堆
+        if (fxParticles.length === 0) { fxRunning = false; fxPile = null; return; }
+
         requestAnimationFrame(loop);
     };
+
     requestAnimationFrame(loop);
 }
+
+
+
 function goldenSparksBurst(dir = +1) {
     if (!settings.anim) return;
     ensureFxCanvas();
@@ -538,6 +674,69 @@ function goldenSparksBurst(dir = +1) {
     const target = document.getElementById('workspace') || document.body;
     target.classList.remove('fx-shake-strong'); void target.offsetWidth; target.classList.add('fx-shake-strong');
 }
+function goldenBurstAtRect(rect, count = 160) {
+    if (!settings.anim) return;
+    ensureFxCanvas();
+
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+
+    for (let i = 0; i < count; i++) {
+        const speed = 520 + Math.random() * 620;
+        const angle = Math.random() * Math.PI * 2;
+        const vx = Math.cos(angle) * speed;
+        const vy = Math.sin(angle) * speed * 0.85 - 60;
+        fxParticles.push({
+            x: cx, y: cy, vx, vy,
+            size: 1.6 + Math.random() * 2.4,
+            alpha: 1,
+            landed: false,
+            landTime: 0
+        });
+    }
+    startFxLoop();
+}
+function emitBurstDuring(rect, ms = 900, every = 70, base = 32, spread = 28) {
+    const end = performance.now() + ms;
+    fxEmitActive++;
+    const tick = () => {
+        const now = performance.now();
+        if (now > end) {
+            fxEmitActive = Math.max(0, fxEmitActive - 1);
+            if (settings.animExtreme && fxEmitActive === 0) {
+                fxLastEmitAt = performance.now();
+            }
+            return;
+        }
+
+        const n = base + ((Math.random() * spread) | 0);
+        goldenBurstAtRect(rect, n);
+        setTimeout(tick, every);
+    };
+    setTimeout(tick, 0);
+}
+
+function triggerExtremeSerialToggleFx() {
+    if (!settings.animExtreme) return;
+
+    const panes = Array
+        .from(document.querySelectorAll('.pane'))
+        .filter(p => p.offsetParent !== null && p.offsetWidth > 0 && p.offsetHeight > 0);
+
+    panes.forEach(p => {
+        p.classList.remove('fx-spin');
+        void p.offsetWidth;
+        p.classList.add('fx-spin');
+    });
+
+    panes.forEach(p => {
+        const r = p.getBoundingClientRect();
+        emitBurstDuring(r, 900, 70, 28, 18);
+    });
+
+    startFxLoop();
+}
+
 function spawnRipple(x, y) {
     if (!settings.anim) return;
     ensureFxLayer();
@@ -655,6 +854,19 @@ function bounce(el) {
     void el.offsetWidth;
     el.classList.add('fx-pop');
 }
+function applyBottomPanelForPane(pane) {
+    const btnTab = document.querySelector('#bottomNav button[data-page="serial"]');
+    const serialPage = document.getElementById('page-serial');
+    if (!btnTab || !serialPage) return;
+
+    const rows = serialPage.querySelectorAll('.row');
+    const serialParamsRow = rows && rows[1];
+
+    const isTcp = !!pane && (pane.type === 'tcp' || (pane.info?.path || '').startsWith('tcp://'));
+    btnTab.textContent = isTcp ? '端口' : '串口';
+    if (serialParamsRow) serialParamsRow.style.display = isTcp ? 'none' : '';
+}
+
 window.addEventListener('click', (e) => {
     if (!settings.anim) return;
     const t = e.target.closest('button, .port-status, #bottomNav button, input[type="checkbox"], .cmd-card .send');
@@ -685,7 +897,7 @@ const btnRefreshPorts = $('#btnRefreshPorts');
 const btnScriptStop = $('#btnScriptStop');
 let currentRunId = null;
 const SIDEBAR_COLLAPSED_W = 56;
-const LEFT_GUTTER = 12;
+const board_margin = 2;
 const activeLabel = $('#activePanelLabel');
 const selPort = $('#selPort');
 const baud = $('#baud');
@@ -837,7 +1049,9 @@ function promotePaneToFront(id) {
 function exportPanelsConfig() {
     return Array.from(state.panes.values()).map(p => ({
         id: p.info.path,
+        path: p.info.path,
         name: p.info.name,
+        type: p.type || ((p.info.path || '').startsWith('tcp://') ? 'tcp' : 'serial'),
         options: p.options,
         left: p.el.style.left || "30px",
         top: p.el.style.top || "30px",
@@ -846,7 +1060,6 @@ function exportPanelsConfig() {
         hidden: p.el.classList.contains('hidden')
     }));
 }
-
 
 function escHtml(s) {
     return String(s)
@@ -1079,10 +1292,13 @@ function setActive(id) {
         activeLabel.textContent = pane.info.name;
         fillPortSelect(id);
         promotePaneToFront(id);
+        applyBottomPanelForPane(pane); // ← 新增
     } else {
         activeLabel.textContent = '（未选择）';
+        applyBottomPanelForPane(null); // ← 新增
     }
 }
+
 
 function fillPortSelect(activeId) {
     const pane = state.panes.get(activeId);
@@ -1113,6 +1329,9 @@ function fillPortSelect(activeId) {
 }
 
 function createPane(portPath, name) {
+    const isTcpId = typeof portPath === 'string' && portPath.startsWith('tcp://');
+    const tcpInfo = isTcpId ? (() => { const s = portPath.slice(6); const i = s.lastIndexOf(':'); return { host: s.slice(0, i), port: parseInt(s.slice(i + 1), 10) }; })() : null;
+    const paneType = isTcpId ? 'tcp' : 'serial';
     const id = portPath;
     if (state.panes.has(id)) {
         setActive(id);
@@ -1145,7 +1364,7 @@ function createPane(portPath, name) {
     <div class="title">
       <div class="name">${name}</div>
       <div class="btns">
-        <button class="btnToggle" title="打开/关闭串口">打开串口</button>
+        <button class="btnToggle" title="${paneType === 'tcp' ? '打开/关闭连接' : '打开/关闭串口'}">${paneType === 'tcp' ? '打开连接' : '打开串口'}</button>
         <button class="btnHex" title="切换Hex显示">HEX显示</button>
         <button class="btnHide" title="隐藏面板">隐藏</button>
         <button class="btnPop" title="弹出独立窗口">弹出</button>
@@ -1172,27 +1391,56 @@ function createPane(portPath, name) {
         e.stopPropagation();
         const pane = state.panes.get(id);
         if (!pane) return;
+
         if (pane.open) {
-            await window.api.serial.close(id);
+            if (pane.type === 'tcp') await window.api.tcp.close(id);
+            else await window.api.serial.close(id);
             pane.open = false;
-            btnToggle.textContent = '打开串口';
+            btnToggle.textContent = pane.type === 'tcp' ? '打开连接' : '打开串口';
         } else {
-            pane.options = {
-                baudRate: parseInt(baud.value, 10),
-                dataBits: parseInt(databits.value, 10),
-                stopBits: parseInt(stopbits.value, 10),
-                parity: parity.value
-            };
-            const res = await window.api.serial.open(pane.info.path, pane.options);
-            if (res.ok) {
-                pane.open = true;
-                btnToggle.textContent = '关闭串口';
+            if (pane.type === 'tcp') {
+                btnToggle.textContent = '正在连接…';
+                const r = await window.api.tcp.open(tcpInfo.host, tcpInfo.port, null);
+                if (r && r.ok) {
+                    pane.open = true;
+                    btnToggle.textContent = '关闭连接';
+                    if (!pane._openNotified) {
+                        const add = '\n[已打开]\n';
+                        pane.textBuffer += add; pane.hexBuffer += add;
+                        pane.chunks.push({ text: add, hex: add, isEcho: false });
+                        appendTextTail(pane, add);
+                        pane._openNotified = true;
+                    }
+                } else {
+                    btnToggle.textContent = '打开连接';
+                    const msg = '\n[错误] ' + (r?.error || '连接失败') + '\n';
+                    pane.textBuffer += msg; pane.hexBuffer += msg;
+                    pane.chunks.push({ text: msg, hex: msg, isEcho: false });
+                    appendTextTail(pane, msg);
+                }
             } else {
-                alert('打开失败：' + res.error);
+                pane.options = {
+                    baudRate: parseInt(baud.value, 10),
+                    dataBits: parseInt(databits.value, 10),
+                    stopBits: parseInt(stopbits.value, 10),
+                    parity: parity.value
+                };
+                const r = await window.api.serial.open(id, pane.options);
+                if (r && r.ok) {
+                    pane.open = true;
+                    btnToggle.textContent = '关闭串口';
+                } else {
+                    btnToggle.textContent = '打开串口';
+                    const msg = '\n[错误] ' + (r?.error || '打开失败') + '\n';
+                    pane.textBuffer += msg; pane.hexBuffer += msg;
+                    pane.chunks.push({ text: msg, hex: msg, isEcho: false });
+                    appendTextTail(pane, msg);
+                }
             }
         }
         refreshPanelList();
         window.api.config.save(exportPanelsConfig());
+        triggerExtremeSerialToggleFx();
     });
 
     const btnHex = el.querySelector('.btnHex');
@@ -1283,17 +1531,17 @@ function createPane(portPath, name) {
         const wsW = ws.clientWidth;
         const wsH = ws.clientHeight;
 
-        const leftMin = SIDEBAR_COLLAPSED_W + LEFT_GUTTER;
+        const leftMin = SIDEBAR_COLLAPSED_W + board_margin;
 
-        const maxLeft = Math.max(leftMin, wsW - el.offsetWidth);
-        const maxTop = Math.max(0, wsH - el.offsetHeight);
+        const maxLeft = Math.max(leftMin, wsW - el.offsetWidth) - 2;
+        const maxTop = Math.max(0, wsH - el.offsetHeight) - 2;
 
         let newLeft = startLeft + dx;
         let newTop = startTop + dy;
 
         if (newLeft < leftMin) newLeft = leftMin;
         if (newLeft > maxLeft) newLeft = maxLeft;
-        if (newTop < 0) newTop = 0;
+        if (newTop < 2) newTop = 2;
         if (newTop > maxTop) newTop = maxTop;
 
         el.style.left = `${newLeft}px`;
@@ -1330,7 +1578,7 @@ function createPane(portPath, name) {
         const wsW = ws.clientWidth, wsH = ws.clientHeight;
         const minW = 200, minH = 120;
 
-        const leftMin = (sidebarEl?.offsetWidth || SIDEBAR_COLLAPSED_W) + LEFT_GUTTER;
+        const leftMin = (sidebarEl?.offsetWidth || SIDEBAR_COLLAPSED_W) + board_margin;
         const topMin = 0;
 
         let dx = e.clientX - rs.sx;
@@ -1395,6 +1643,7 @@ function createPane(portPath, name) {
     state.panes.set(id, {
         el,
         info: { path: id, name: name || id },
+        type: paneType,
         options: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' },
         open: false,
         viewMode: 'text',
@@ -1418,7 +1667,7 @@ function createPane(portPath, name) {
     });
 
 
-    const saved = (state.savedConfig || []).find(p => p.id === id);
+    const saved = (state.savedConfig || []).find(p => (p.id || p.path) === id);
     if (saved) {
         el.style.left = saved.left; el.style.top = saved.top;
         el.style.width = saved.width; el.style.height = saved.height;
@@ -1435,42 +1684,65 @@ function refreshPanelList() {
     panelListEl.innerHTML = '';
     state.panes.forEach((pane, id) => {
         const li = document.createElement('li');
-        li.className = 'port-row'; // ← 给样式用
+        li.className = 'port-row';
+
+        const kind = pane.type === 'tcp' ? '连接' : '串口';
 
         const statusBtn = document.createElement('button');
         statusBtn.className = 'port-status ' + (pane.open ? 'open' : 'closed');
-        statusBtn.title = pane.open ? '关闭串口' : '打开串口';
+        statusBtn.title = pane.open ? `关闭${kind}` : `打开${kind}`;
         statusBtn.onclick = async (e) => {
             e.stopPropagation();
             const p = state.panes.get(id);
             if (!p) return;
-
             if (p.open) {
-                await window.api.serial.close(id);
+                if (p.type === 'tcp') await window.api.tcp.close(id);
+                else await window.api.serial.close(id);
                 p.open = false;
             } else {
-                p.options = {
-                    baudRate: parseInt(baud.value, 10),
-                    dataBits: parseInt(databits.value, 10),
-                    stopBits: parseInt(stopbits.value, 10),
-                    parity: parity.value
-                };
-                const res = await window.api.serial.open(p.info.path, p.options);
-                if (!res.ok) return alert('打开失败：' + res.error);
+                if (p.type === 'tcp') {
+                    const s = p.info.path.slice(6); const i = s.lastIndexOf(':');
+                    const r = await window.api.tcp.open(s.slice(0, i), parseInt(s.slice(i + 1), 10), null);
+                    if (!(r && r.ok)) { refreshPanelList(); return; }
+                } else {
+                    p.options = {
+                        baudRate: parseInt(baud.value, 10),
+                        dataBits: parseInt(databits.value, 10),
+                        stopBits: parseInt(stopbits.value, 10),
+                        parity: parity.value
+                    };
+                    const r = await window.api.serial.open(id, p.options);
+                    if (!(r && r.ok)) { refreshPanelList(); return; }
+                }
                 p.open = true;
+                const btn = p.el?.querySelector('.btnToggle');
+                if (btn) btn.textContent = (p.type === 'tcp') ? '关闭连接' : '关闭串口';
+                if (!p._openNotified) {
+                    const add = '\n[已打开]\n';
+                    p.textBuffer += add; p.hexBuffer += add;
+                    p.chunks.push({ text: add, hex: add, isEcho: false });
+                    appendTextTail(p, add);
+                    p._openNotified = true;
+                }
             }
-            const btnToggle = p.el.querySelector('.btnToggle');
-            if (btnToggle) btnToggle.textContent = p.open ? '关闭串口' : '打开串口';
-
             refreshPanelList();
-            window.api.config.save(exportPanelsConfig());
         };
 
         const nameEl = document.createElement('span');
         nameEl.className = 'port-name';
-        nameEl.textContent = pane.info.name || id;
         nameEl.title = pane.info.name || id;
+        const label = document.createElement('span');
+        label.className = 'label';
+        label.textContent = pane.info.name || id;
+        nameEl.appendChild(label);
         nameEl.onclick = () => { pane.el.classList.remove('hidden'); setActive(id); };
+        const applyMarquee = () => {
+            const delta = Math.max(0, label.scrollWidth - nameEl.clientWidth);
+            nameEl.classList.toggle('marquee', delta > 0);
+            nameEl.style.setProperty('--deltaX', `${delta}px`);
+        };
+        requestAnimationFrame(applyMarquee);
+        new ResizeObserver(applyMarquee).observe(nameEl);
 
         const act = document.createElement('div');
         act.className = 'actions';
@@ -1482,30 +1754,22 @@ function refreshPanelList() {
             if (!ok) { safeRefocusInput(); return; }
             const body = pane.el.querySelector('.body');
             body.innerHTML = '';
-            pane.logs = [];
-            pane.chunks = [];
-            pane.textBuffer = '';
-            pane.hexBuffer = '';
-            pane.bodyTextNode = null;
-            pane.tailTextNode = null;
+            pane.logs = []; pane.chunks = [];
+            pane.textBuffer = ''; pane.hexBuffer = '';
+            pane.bodyTextNode = null; pane.tailTextNode = null;
             safeRefocusInput();
         };
-
 
         const bDel = document.createElement('button');
         bDel.textContent = '删除';
         bDel.onclick = async () => {
-            const ok = await uiConfirm(`确定要删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
+            const ok = await uiConfirm(`确定删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
             if (!ok) { safeRefocusInput(); return; }
-            await window.api.serial.close(id);
             pane.el.remove();
             state.panes.delete(id);
-            const idxOrder = state.paneOrder.indexOf(id);
-            if (idxOrder >= 0) state.paneOrder.splice(idxOrder, 1);
-            applyPaneZOrder();
-            refreshPanelList();
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
+            refreshPanelList();
             safeRefocusInput();
         };
 
@@ -1525,28 +1789,21 @@ window.api.serial.onData(({ id, bytes }) => {
     const bufferTime = parseInt(bufferInput.value || '0', 10);
     const pane = state.panes.get(id);
     if (!pane) return;
-
     if (!state.buffers.has(id)) state.buffers.set(id, { timer: null, open: false });
     const g = state.buffers.get(id);
-
     const appendChunk = (withTs) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
         const addText = (withTs ? `[${ts}] ` : '') + textStr;
         const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
-
-
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
         pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
         trimPane(pane);
-
         const piece = (pane.viewMode === 'hex') ? addHex : addText;
         appendTextTail(pane, piece);
-
     };
-
     if (bufferTime > 0) {
         if (!g.open) { g.open = true; appendChunk(true); }
         else { appendChunk(false); }
@@ -1561,7 +1818,6 @@ window.api.serial.onData(({ id, bytes }) => {
             g.open = false;
             g.timer = null;
         }, bufferTime);
-
     } else {
         appendChunk(true);
         if (!pane.textBuffer.endsWith('\n')) {
@@ -1574,6 +1830,49 @@ window.api.serial.onData(({ id, bytes }) => {
 
 });
 
+window.api.tcp.onData(({ id, bytes }) => {
+    const bufferTime = parseInt(bufferInput.value || '0', 10);
+    const pane = state.panes.get(id);
+    if (!pane) return;
+    if (!state.buffers.has(id)) state.buffers.set(id, { timer: null, open: false });
+    const g = state.buffers.get(id);
+    const appendChunk = (withTs) => {
+        const ts = nowTs();
+        const textStr = formatBytes(bytes, 'text');
+        const hexStr = formatBytes(bytes, 'hex');
+        const addText = (withTs ? `[${ts}] ` : '') + textStr;
+        const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
+        pane.textBuffer += addText;
+        pane.hexBuffer += addHex;
+        pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
+        trimPane(pane);
+        const piece = (pane.viewMode === 'hex') ? addHex : addText;
+        appendTextTail(pane, piece);
+    };
+    if (bufferTime > 0) {
+        if (!g.open) { g.open = true; appendChunk(true); }
+        else { appendChunk(false); }
+        if (g.timer) clearTimeout(g.timer);
+        g.timer = setTimeout(() => {
+            if (!pane.textBuffer.endsWith('\n')) {
+                pane.textBuffer += '\n';
+                pane.hexBuffer += '\n';
+                pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
+                appendTextTail(pane, '\n');
+            }
+            g.open = false;
+            g.timer = null;
+        }, bufferTime);
+    } else {
+        appendChunk(true);
+        if (!pane.textBuffer.endsWith('\n')) {
+            pane.textBuffer += '\n';
+            pane.hexBuffer += '\n';
+            pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
+            appendTextTail(pane, '\n');
+        }
+    }
+});
 
 function showData(id, bytes) {
     const pane = state.panes.get(id);
@@ -1632,13 +1931,14 @@ window.api.serial.onEvent((evt) => {
 
     let add = '';
     if (evt.type === 'open') {
-        add = `\n[已打开]\n`;
+        if (!pane._openNotified) { add = `\n[已打开]\n`; pane._openNotified = true; }
         pane.open = true;
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = '关闭串口';
     } else if (evt.type === 'close') {
         add = `\n[已关闭]\n`;
         pane.open = false;
+        pane._openNotified = false;
         if (pane.autoTimer) { clearInterval(pane.autoTimer); pane.autoTimer = null; }
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = '打开串口';
@@ -1656,7 +1956,34 @@ window.api.serial.onEvent((evt) => {
     }
 });
 
-
+window.api.tcp.onEvent((evt) => {
+    const pane = state.panes.get(evt.id);
+    if (!pane) return;
+    let add = '';
+    if (evt.type === 'open') {
+        pane.open = true;
+        const btn = pane.el.querySelector('.btnToggle');
+        if (btn) btn.textContent = (pane.type === 'tcp') ? '关闭连接' : '关闭串口';
+        if (!pane._openNotified) { add = `\n[已打开]\n`; pane._openNotified = true; }
+    } else if (evt.type === 'close') {
+        add = `\n[已关闭]\n`;
+        pane.open = false;
+        pane._openNotified = false;
+        if (pane.autoTimer) { clearInterval(pane.autoTimer); pane.autoTimer = null; }
+        const btn = pane.el.querySelector('.btnToggle');
+        if (btn) btn.textContent = (pane.type === 'tcp') ? '打开连接' : '打开串口';
+    } else if (evt.type === 'error') {
+        add = `\n[错误] ${evt.message}\n`;
+    }
+    if (add) {
+        pane.textBuffer += add;
+        pane.hexBuffer += add;
+        pane.chunks.push({ text: add, hex: add, isEcho: false });
+        trimPane(pane);
+        appendTextTail(pane, add);
+        refreshPanelList();
+    }
+});
 
 window.api.panel.onFocusFromPopout(({ id }) => { if (state.panes.has(id)) setActive(id); });
 window.api.panel.onDockRequest(({ id, html }) => {
@@ -1703,6 +2030,18 @@ toggleSidebarBtn.addEventListener('click', () => {
 
 btnNew.addEventListener('click', async () => {
     await refreshPortsCombo();
+
+    if (useTcp) {
+        useTcp.checked = false;
+        tcpFields.style.display = 'none';
+        serialFields.style.display = '';
+        useTcp.onchange = () => {
+            const on = useTcp.checked;
+            tcpFields.style.display = on ? '' : 'none';
+            serialFields.style.display = on ? 'none' : '';
+        };
+    }
+
     dlgPortList.innerHTML = '';
     state.knownPorts.forEach(p => {
         const opt = document.createElement('option');
@@ -1712,8 +2051,18 @@ btnNew.addEventListener('click', async () => {
     });
     dlgNew.showModal();
 });
+
 dlgCancel.addEventListener('click', () => dlgNew.close());
 dlgCreate.addEventListener('click', () => {
+    if (useTcp && useTcp.checked) {
+        const host = (tcpHost.value || '').trim();
+        const port = parseInt(tcpPort.value, 10);
+        if (!host || !port) return;
+        const id = `tcp://${host}:${port}`;
+        createPane(id, `${host}:${port}`);
+        dlgNew.close();
+        return;
+    }
     const path = dlgPortList.value;
     if (!path) return;
     createPane(path, path);
@@ -1756,7 +2105,9 @@ btnSend.addEventListener('click', async () => {
             logToPane(pane, '[错误] 端口未打开，无法发送\n');
             return;
         }
-        const res = await window.api.serial.write(id, data, mode, append);
+        const res = (pane.type === 'tcp')
+            ? await window.api.tcp.write(id, data, mode, append)
+            : await window.api.serial.write(id, data, mode, append);
         if (!res.ok) {
             log('发送失败：' + res.error);
             return;
@@ -1854,9 +2205,12 @@ btnSendFile.addEventListener('click', async () => {
         log(`开始发送文件：${fileNameInput.value}（${length} 字节）`);
         const chunkSize = 2048;
 
+        const isTcp = (pane.type === 'tcp');
         for (let i = 0; i < hex.length; i += chunkSize) {
             const chunk = hex.slice(i, i + chunkSize);
-            const res = await window.api.serial.write(id, chunk, 'hex', 'none');
+            const res = isTcp
+                ? await window.api.tcp.write(id, chunk, 'hex', 'none')
+                : await window.api.serial.write(id, chunk, 'hex', 'none');
             if (!res.ok) { log('文件发送失败：' + res.error); return; }
         }
         log(`文件发送完成：${fileNameInput.value}（${length} 字节）`);
@@ -2040,6 +2394,11 @@ async function sendCommand(cmd, cardEl) {
     const ms = parseInt(cmdRepeatMs.value || '1000', 10);
     const repeating = cmdRepeat.checked && ms >= 1;
 
+    const pane = state.panes.get(id);
+    const doWrite = (data, mode = 'text', append = append) =>
+    (pane.type === 'tcp'
+        ? window.api.tcp.write(id, data, mode, append)
+        : window.api.serial.write(id, data, mode, append));
     if (repeating) {
         if (state.cmdIntervalMap.has(cmd.id)) {
             clearInterval(state.cmdIntervalMap.get(cmd.id));
@@ -2049,13 +2408,13 @@ async function sendCommand(cmd, cardEl) {
             return;
         }
         const timer = setInterval(async () => {
-            const res = await window.api.serial.write(id, cmd.data || '', cmd.mode || 'text', append);
+            const res = await doWrite(cmd.data || '', cmd.mode || 'text', append);
             if (res.ok) echoIfEnabled(id, cmd.data || '');
         }, ms);
         state.cmdIntervalMap.set(cmd.id, timer);
         if (cardEl) cardEl.classList.add('auto');
     } else {
-        const res = await window.api.serial.write(id, cmd.data || '', cmd.mode || 'text', append);
+        const res = await doWrite(cmd.data || '', cmd.mode || 'text', append);
         if (!res.ok) return alert('发送失败：' + res.error);
         echoIfEnabled(id, cmd.data || '');
     }
@@ -2206,7 +2565,7 @@ function clampAllPanesToWorkspace() {
     const wsW = ws.clientWidth;
     const wsH = ws.clientHeight;
     const sideW = sidebarEl?.offsetWidth || SIDEBAR_COLLAPSED_W;
-    const leftMin = sideW + LEFT_GUTTER;
+    const leftMin = sideW + board_margin;
 
     document.querySelectorAll('.pane').forEach(el => {
         let left = parseInt(el.style.left || '0', 10) || 0;
@@ -2237,8 +2596,12 @@ function clampAllPanesToWorkspace() {
     updateTitlebarSafeArea();
     await refreshPortsCombo();
     const saved = await window.api.config.load();
-    state.savedConfig = saved;
-    saved.forEach(p => createPane(p.id, p.name));
+    state.savedConfig = Array.isArray(saved) ? saved : [];
+    state.savedConfig.forEach(p => {
+        const id = p.id || p.path;
+        const name = p.name || id || '';
+        if (id) createPane(id, name);
+    });
     await loadCommands();
     document.getElementById('echoSend').checked = true;
     renderCmdGrid();

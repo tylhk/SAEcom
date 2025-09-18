@@ -7,6 +7,13 @@ function decodeBase64ToUint8Array(b64) {
 }
 
 contextBridge.exposeInMainWorld('api', {
+  tcp: {
+    open: (host, port, options) => ipcRenderer.invoke('tcp:open', { host, port, options }),
+    write: (id, data, mode, append) => ipcRenderer.invoke('tcp:write', { id, data, mode, append }),
+    close: (id) => ipcRenderer.invoke('tcp:close', { id }),
+    onData: (cb) => ipcRenderer.on('tcp:data', (_e, p) => cb({ id: p.id, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
+    onEvent: (cb) => ipcRenderer.on('tcp:event', (_e, p) => cb(p)),
+  },  
   window: {
     setFullscreen: (flag) => ipcRenderer.send('window:set-fullscreen', { flag }),
     toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen')

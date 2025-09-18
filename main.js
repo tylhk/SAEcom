@@ -48,6 +48,8 @@ function createMainWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,
+    minWidth: 800,
+    minHeight: 500,
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'win32' ? 'hidden' : undefined,
     titleBarOverlay: process.platform === 'win32' ? { color: '#f5f7fa', symbolColor: '#1f2937', height: 30 } : undefined,
@@ -62,6 +64,97 @@ function createMainWindow() {
   mainWindow.webContents.setWindowOpenHandler(({ url }) => openExternal(url) ? { action: 'deny' } : { action: 'allow' });
   mainWindow.webContents.on('will-navigate', (e, url) => { if (openExternal(url)) e.preventDefault(); });
 }
+
+const net = require('net');
+
+const sockets = new Map();
+const TCP_DEFAULTS = {
+  timeoutMs: 2500,
+  keepAlive: true,
+  keepAliveSec: 60,
+  noDelay: true,
+  autoReconnect: false,   // 先默认关闭；要开的话把这里改成 true
+  reconnectMs: 2000
+};
+
+ipcMain.handle('tcp:open', async (e, { host, port, options }) => {
+  const opts = Object.assign({}, TCP_DEFAULTS, options || {});
+  const id = `tcp://${host}:${port}`;
+  if (sockets.has(id)) return { ok: true, id, already: true };
+
+  const entry = { id, host, port, opts, win: e.sender, manualClose: false, socket: null };
+
+  function start(resolveOpen, rejectOpen) {
+    const s = new net.Socket();
+    entry.socket = s;
+    try {
+      s.setNoDelay(!!opts.noDelay);
+      if (opts.keepAlive) s.setKeepAlive(true, opts.keepAliveSec * 1000);
+    } catch { }
+
+    s.once('connect', () => {
+      try { entry.win.send('tcp:event', { id, type: 'open' }); } catch { }
+      resolveOpen && resolveOpen({ ok: true, id });
+    }); s.on('data', (buf) => {
+      try { entry.win.send('tcp:data', { id, base64: Buffer.from(buf).toString('base64'), ts: Date.now() }); } catch { }
+    });
+    s.on('error', (err) => {
+      try { entry.win.send('tcp:event', { id, type: 'error', message: String(err?.message || err) }); } catch { }
+      rejectOpen && rejectOpen({ ok: false, error: String(err?.message || err) });
+    });
+    s.on('close', () => {
+      try { entry.win.send('tcp:event', { id, type: 'close' }); } catch { }
+      if (entry.manualClose) { sockets.delete(id); return; }
+      if (opts.autoReconnect) setTimeout(() => { if (sockets.has(id)) start(); }, opts.reconnectMs);
+      else sockets.delete(id);
+    });
+
+    try { s.connect({ host, port }); } catch (err) {
+      sockets.delete(id);
+      return;
+    }
+
+    if (opts.timeoutMs > 0) {
+      setTimeout(() => {
+        if (!s.destroyed && !s.remoteAddress) {
+          try { s.destroy(new Error('连接超时')); } catch { }
+        }
+      }, opts.timeoutMs);
+    }
+  }
+
+  sockets.set(id, entry);
+  return await new Promise((resolve) => {
+    let settled = false;
+    const resolveOnce = (r) => { if (!settled) { settled = true; resolve(r); } };
+    start((r) => resolveOnce(r), (r) => resolveOnce(r));
+    if (opts.timeoutMs > 0) {
+      setTimeout(() => {
+        if (!entry.socket?.remoteAddress) {
+          try { entry.socket?.destroy(new Error('连接超时')); } catch { }
+          resolveOnce({ ok: false, error: '连接超时' });
+        }
+      }, opts.timeoutMs);
+    }
+  });
+});
+
+ipcMain.handle('tcp:write', async (_e, { id, data, mode = 'text', append = 'none' }) => {
+  const entry = sockets.get(id);
+  if (!entry || !entry.socket) return { ok: false, error: 'NOT_OPEN' };
+  let buf;
+  try { buf = buildWriteBuffer(data, mode, append); } catch (e) { return { ok: false, error: e.message }; }
+  return await new Promise(res => entry.socket.write(buf, err => res(err ? { ok: false, error: err.message } : { ok: true, bytes: buf.length })));
+});
+
+ipcMain.handle('tcp:close', async (_e, { id }) => {
+  const entry = sockets.get(id);
+  if (!entry) return { ok: true, notOpen: true };
+  entry.manualClose = true;
+  try { entry.socket.end(); entry.socket.destroy(); } catch { }
+  sockets.delete(id);
+  return { ok: true };
+});
 
 // ========== 串口 ==========
 function buildWriteBuffer(data, mode, append) {
@@ -143,7 +236,7 @@ ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
         const ent = ports.get(id);
         if (shouldSuppressPortError(ent, e)) return;
         sendAll('serial:event', { id, type: 'error', message: e?.message || String(e) });
-      });      
+      });
 
       ports.set(id, { port, options });
       sendAll('serial:event', { id, type: 'open' });
@@ -156,12 +249,12 @@ ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
 
     const to = setTimeout(() => {
       if (!port.isOpen) {
-        try { port.close(); } catch {}
+        try { port.close(); } catch { }
         finish({ ok: false, error: 'OPEN_TIMEOUT' });
       }
     }, 2500);
 
-    port.open((err) => { if (err) { clearTimeout(to); finish({ ok:false, error: err.message }); } });
+    port.open((err) => { if (err) { clearTimeout(to); finish({ ok: false, error: err.message }); } });
   });
 });
 ipcMain.handle('serial:close', async (_e, { id }) => {

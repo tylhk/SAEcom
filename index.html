@@ -146,11 +146,31 @@
         </div>
 
         <dialog id="dlgNew">
-            <h3>选择串口并创建面板</h3>
-            <div><select id="dlgPortList" style="width:100%"></select></div>
-            <div style="margin-top:10px;text-align:right">
-                <button id="dlgCancel">取消</button>
-                <button id="dlgCreate">创建</button>
+            <h3>创建面板</h3>
+
+            <!-- 串口模式 -->
+            <div id="serialFields">
+                <select id="dlgPortList" style="width:100%"></select>
+            </div>
+
+            <!-- TCP 模式 -->
+            <div id="tcpFields" style="display:none;">
+                <div class="row">
+                    <label style="min-width:90px;">服务器地址：</label>
+                    <input id="tcpHost" placeholder="例如 127.0.0.1 或 demo.server.com" style="flex:1;">
+                </div>
+                <div class="row" style="margin-top:6px;">
+                    <label style="min-width:90px;">端口：</label>
+                    <input id="tcpPort" type="number" min="1" max="65535" value="502" style="width:160px;">
+                </div>
+            </div>
+
+            <div class="dlg-actions">
+                <label class="tcp-switch"><input id="useTcp" type="checkbox"> 使用 TCP 连接</label>
+                <div class="right">
+                    <button id="dlgCancel">取消</button>
+                    <button id="dlgCreate">创建</button>
+                </div>
             </div>
         </dialog>
 
@@ -160,16 +180,16 @@
                 <table class="cmd-table">
                     <thead>
                         <tr>
-                          <th class="drag" style="width:36px;">序</th>
-                          <th class="sel"  style="width:44px;">
-                            <input id="cmdSelectAll" type="checkbox" title="全选/全不选">
-                          </th>
-                          <th>名称</th>
-                          <th>内容</th>
-                          <th style="width:96px;">模式</th>
-                          <th style="width:96px;">操作</th>
+                            <th class="drag" style="width:36px;">序</th>
+                            <th class="sel" style="width:44px;">
+                                <input id="cmdSelectAll" type="checkbox" title="全选/全不选">
+                            </th>
+                            <th>名称</th>
+                            <th>内容</th>
+                            <th style="width:96px;">模式</th>
+                            <th style="width:96px;">操作</th>
                         </tr>
-                      </thead>                      
+                    </thead>
                     <tbody id="cmdTableBody"></tbody>
                 </table>
             </div>
@@ -244,6 +264,13 @@
                         <div class="setting-label">惊人的动画</div>
                         <label class="el-switch">
                             <input type="checkbox" id="animToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">更惊人的动画</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="animExtremeToggle">
                             <span class="el-switch-core"></span>
                         </label>
                     </div>
