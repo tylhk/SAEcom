@@ -544,28 +544,24 @@ function startFxLoop() {
             fxPile = null;
         }
 
-        // —— 极致模式的“统一延时淡出”判定 —— 
         const extremeHold = settings.animExtreme && (fxEmitActive > 0 || (now - fxLastEmitAt < FX_HOLD_AFTER_EMIT_MS));
         const extremeFadeT = Math.max(0, now - (fxLastEmitAt + FX_HOLD_AFTER_EMIT_MS)); // 距开始淡出的毫秒数
         const extremeFadeK = settings.animExtreme
             ? Math.max(0, 1 - (extremeFadeT / FX_FADE_MS_EXTREME))
-            : 1; // 1→0
+            : 1;
 
         const g = 1800;
 
         fxParticles = fxParticles.filter(p => {
             if (!p.landed) {
-                // 受力
                 p.vy += g * dt;
                 p.x += p.vx * dt;
                 p.y += p.vy * dt;
 
-                // 左/右/上反弹
                 if (p.x - p.size < boundLeft) { p.x = boundLeft + p.size; p.vx = -p.vx * 0.55; }
                 if (p.x + p.size > boundRight) { p.x = boundRight - p.size; p.vx = -p.vx * 0.55; }
                 if (p.y - p.size < boundTop) { p.y = boundTop + p.size; p.vy = -p.vy * 0.55; }
 
-                // 触底
                 if (p.y + p.size >= landY - 0.5) {
                     if (settings.animExtreme && fxPile) {
                         const idx = Math.max(0, Math.min(fxPile.count - 1, Math.floor((p.x - fxPile.left) / fxPile.binW)));
@@ -578,7 +574,7 @@ function startFxLoop() {
 
                         p.y = fxPile.baseY - newTopH + p.size * (packing - 1);
                         p.vy = 0;
-                        p.vx = 0;              // 极致模式：落地即静止，不再漂移
+                        p.vx = 0;
                         p.landed = true;
                         p.landTime = now;
                         fxPile.heights[idx] = newTopH;
@@ -590,15 +586,11 @@ function startFxLoop() {
                     }
                 }
             } else {
-                // —— 已着陆 —— 
                 if (settings.animExtreme) {
-                    // 极致模式：静止堆积，不做水平滑移
-                    p.vx = 0; // 防御式清零
-                    // 延时淡出：最后一次发射 3 秒内不降 alpha，之后统一按极致淡出曲线
+                    p.vx = 0;
                     p.alpha = extremeHold ? 1 : extremeFadeK;
 
                 } else {
-                    // 普通模式：略微滑移 + 个人淡出
                     p.vx *= 0.92;
                     p.x += p.vx * dt;
                     if (p.x - p.size < boundLeft) p.x = boundLeft + p.size;
@@ -609,7 +601,6 @@ function startFxLoop() {
                 }
             }
 
-            // 绘制（落地后不画长尾，避免“漂浮感”）
             const grd = fxCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.size * 1.6);
             grd.addColorStop(0, `rgba(255,220,130,${0.9 * p.alpha})`);
             grd.addColorStop(0.5, `rgba(255,190,70,${0.7 * p.alpha})`);
@@ -629,11 +620,9 @@ function startFxLoop() {
                 fxCtx.stroke();
             }
 
-            // 存活
             return p.alpha > 0 && p.x > -50 && p.x < window.innerWidth + 50;
         });
 
-        // 全部消失 → 关闭循环并重置堆
         if (fxParticles.length === 0) { fxRunning = false; fxPile = null; return; }
 
         requestAnimationFrame(loop);
@@ -641,8 +630,6 @@ function startFxLoop() {
 
     requestAnimationFrame(loop);
 }
-
-
 
 function goldenSparksBurst(dir = +1) {
     if (!settings.anim) return;

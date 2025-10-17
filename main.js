@@ -197,9 +197,55 @@ ipcMain.on('config:save', (_e, p) => savePanelsConfig(p));
 ipcMain.handle('commands:load', () => loadCommandsConfig());
 ipcMain.on('commands:save', (_e, c) => saveCommandsConfig(c));
 
-ipcMain.handle('serial:list', async () => (await SerialPort.list()).map(i => ({
-  path: i.path, manufacturer: i.manufacturer || '', serialNumber: i.serialNumber || '', friendlyName: i.friendlyName || i.pnpId || ''
-})));
+const { execFile } = require('child_process');
+
+async function listSerialPortsSafe() {
+  let base = [];
+  try { base = await SerialPort.list(); } catch { base = []; }
+
+  // 规范化为我们前端使用的结构
+  const map = new Map();
+  for (const i of base) {
+    const path = String(i.path || '').trim();
+    if (!path) continue;
+    const key = path.toUpperCase();
+    map.set(key, {
+      path,
+      manufacturer: i.manufacturer || '',
+      serialNumber: i.serialNumber || '',
+      friendlyName: i.friendlyName || i.pnpId || ''
+    });
+  }
+
+  // Windows 回退：从注册表补齐可能被遗漏的虚拟口
+  if (process.platform === 'win32') {
+    await new Promise((resolve) => {
+      execFile('reg', ['query', 'HKLM\\HARDWARE\\DEVICEMAP\\SERIALCOMM'], { windowsHide: true },
+        (err, stdout) => {
+          if (!err && stdout) {
+            stdout.split(/\r?\n/).forEach(line => {
+              const m = line.match(/REG_SZ\s+(COM\d+)/i);
+              if (m) {
+                const p = m[1];
+                const key = p.toUpperCase();
+                if (!map.has(key)) {
+                  map.set(key, { path: p, manufacturer: '', serialNumber: '', friendlyName: '（系统注册表）' });
+                }
+              }
+            });
+          }
+          resolve();
+        });
+    });
+  }
+
+  return Array.from(map.values());
+}
+
+ipcMain.handle('serial:list', async () => {
+  return await listSerialPortsSafe();
+});
+
 ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
   const id = getPortId(p);
   if (ports.has(id)) {
