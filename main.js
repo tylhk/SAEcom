@@ -66,6 +66,71 @@ function createMainWindow() {
 }
 
 const net = require('net');
+const os = require('os');
+
+// 串口 → TCP 共享：每个串口面板一个实例
+// key = portId（就是串口 path），value = { server, port, clients:Set<Socket>, onSerialData }
+const shares = new Map();
+
+function isRfc1918(ip) {
+  // 10/8
+  if (/^10\./.test(ip)) return true;
+  // 172.16 - 172.31
+  const m172 = ip.match(/^172\.(\d+)\./);
+  if (m172) {
+    const n = parseInt(m172[1], 10);
+    if (n >= 16 && n <= 31) return true;
+  }
+  // 192.168/16
+  if (/^192\.168\./.test(ip)) return true;
+  return false;
+}
+
+function looksVirtual(ifname='') {
+  const n = (ifname || '').toLowerCase();
+  // 尽量避开常见虚拟/隧道/抓包适配器
+  return /(vmnet|vmware|virtualbox|vbox|hyper[- ]?v|wsl|docker|hamachi|zerotier|bridge|npcap|npf|tap|tun|loopback)/i.test(n);
+}
+
+function listLanIPv4() {
+  const ifs = os.networkInterfaces();
+  const all = [];
+
+  for (const name of Object.keys(ifs)) {
+    for (const inf of ifs[name] || []) {
+      if (inf.family !== 'IPv4') continue;
+      if (inf.internal) continue;
+
+      const ip = inf.address;
+      const entry = {
+        ip,
+        ifname: name,
+        score: 0,
+        virt: looksVirtual(name)
+      };
+
+      // 打分：优先 RFC1918；其次 CGNAT（100.64/10）；再其它
+      if (isRfc1918(ip)) entry.score += 100;
+      else if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) entry.score += 20; // CGNAT
+      else entry.score += 5;
+
+      // 虚拟网卡降权
+      if (entry.virt) entry.score -= 50;
+
+      all.push(entry);
+    }
+  }
+
+  if (!all.length) return ['127.0.0.1'];
+
+  // 只要有 RFC1918，就过滤掉非 RFC1918
+  const hasPrivate = all.some(a => isRfc1918(a.ip) && !a.virt);
+  const cand = hasPrivate ? all.filter(a => isRfc1918(a.ip)) : all;
+
+  cand.sort((a, b) => b.score - a.score);
+  // 返回“最佳一个在最前”，其余备选在后
+  return cand.map(a => a.ip);
+}
 
 const sockets = new Map();
 const TCP_DEFAULTS = {
@@ -95,7 +160,7 @@ ipcMain.handle('tcp:open', async (e, { host, port, options }) => {
     s.once('connect', () => {
       try { entry.win.send('tcp:event', { id, type: 'open' }); } catch { }
       resolveOpen && resolveOpen({ ok: true, id });
-    }); s.on('data', (buf) => {
+    }); s.on('data', (buf) => { 
       try { entry.win.send('tcp:data', { id, base64: Buffer.from(buf).toString('base64'), ts: Date.now() }); } catch { }
     });
     s.on('error', (err) => {
@@ -176,8 +241,82 @@ function writeToSerial(id, data, mode = 'text', append = 'none') {
   let buf; try { buf = buildWriteBuffer(data, mode, append); } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
   return new Promise(r => entry.port.write(buf, err => r(err ? { ok: false, error: err.message } : { ok: true, bytes: buf.length })));
 }
+function startTcpShare(portId, sharePort = 9000) {
+  if (shares.has(portId)) return shares.get(portId);
+  const ent = ports.get(portId);
+  if (!ent || !ent.port || !ent.port.isOpen) {
+    throw new Error('串口未打开，无法共享');
+  }
 
-// ========== 脚本 ==========
+  const srv = net.createServer();
+  const clients = new Set();
+
+  const onSerialData = (buf) => {
+    for (const c of clients) {
+      if (!c.destroyed) {
+        try { c.write(buf); } catch {}
+      }
+    }
+  };
+  ent.port.on('data', onSerialData);
+
+  srv.on('connection', (sock) => {
+    try { sock.setNoDelay(true); sock.setKeepAlive(true, 60000); } catch {}
+    clients.add(sock);
+    sock.on('data', (buf) => {
+      try { ent.port.write(buf); } catch {}
+    });
+    sock.on('close', () => clients.delete(sock));
+    sock.on('error', () => { try { sock.destroy(); } catch {} clients.delete(sock); });
+  });
+
+  srv.on('error', (err) => {
+    console.error('TCP Share error:', err?.message || err);
+  });
+
+  srv.listen(sharePort);
+
+  const rec = { server: srv, port: sharePort, clients, onSerialData };
+  shares.set(portId, rec);
+  return rec;
+}
+
+function stopTcpShare(portId) {
+  const rec = shares.get(portId);
+  if (!rec) return;
+  try {
+    for (const c of rec.clients) { try { c.destroy(); } catch {} }
+    rec.clients.clear();
+    rec.server.close();
+  } catch {}
+  const ent = ports.get(portId);
+  if (ent?.port && rec.onSerialData) {
+    try { ent.port.off('data', rec.onSerialData); } catch {}
+  }
+  shares.delete(portId);
+}
+
+ipcMain.handle('tcpShare:start', (_e, { id, port }) => {
+  const p = parseInt(port, 10) || 9000;
+  const rec = startTcpShare(id, p);
+  const ips = listLanIPv4();
+  const addrs = ips.map(ip => `${ip}:${rec.port}`);
+  return { ok: true, port: rec.port, addrs, best: addrs[0], candidates: addrs };
+});
+
+ipcMain.handle('tcpShare:stop', (_e, { id }) => {
+  stopTcpShare(id);
+  return { ok: true };
+});
+
+ipcMain.handle('tcpShare:status', (_e, { id }) => {
+  const rec = shares.get(id);
+  if (!rec) return { ok: true, active: false };
+  const ips = listLanIPv4();
+  const addrs = ips.map(ip => `${ip}:${rec.port}`);
+  return { ok: true, active: true, port: rec.port, addrs, best: addrs[0], candidates: addrs };
+});
+
 function addScriptWatcher(portId, runId, fn) {
   if (!scriptWatchers.has(portId)) scriptWatchers.set(portId, new Map());
   scriptWatchers.get(portId).set(runId, fn);
@@ -203,7 +342,6 @@ async function listSerialPortsSafe() {
   let base = [];
   try { base = await SerialPort.list(); } catch { base = []; }
 
-  // 规范化为我们前端使用的结构
   const map = new Map();
   for (const i of base) {
     const path = String(i.path || '').trim();
@@ -217,7 +355,6 @@ async function listSerialPortsSafe() {
     });
   }
 
-  // Windows 回退：从注册表补齐可能被遗漏的虚拟口
   if (process.platform === 'win32') {
     await new Promise((resolve) => {
       execFile('reg', ['query', 'HKLM\\HARDWARE\\DEVICEMAP\\SERIALCOMM'], { windowsHide: true },
@@ -276,6 +413,7 @@ ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
       });
       port.on('close', () => {
         sendAll('serial:event', { id, type: 'close' });
+        try { if (shares.has(id)) stopTcpShare(id); } catch {}
         ports.delete(id);
       });
       port.on('error', e => {
@@ -383,6 +521,5 @@ ipcMain.handle('scripts:run', (e, { code, ctx }) => {
 });
 ipcMain.handle('scripts:stop', (_e, { runId }) => { const t = runningScripts.get(runId); if (!t) return { ok: false, error: 'NOT_RUNNING' }; t.aborted = true; removeScriptWatcher(runId); return { ok: true }; });
 
-// ========== 生命周期 ==========
 app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
 app.on('window-all-closed', () => { ports.forEach(({ port }) => { try { port.close(); } catch { } }); if (process.platform !== 'darwin') app.quit(); });

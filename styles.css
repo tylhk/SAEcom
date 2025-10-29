@@ -1960,31 +1960,51 @@ dialog.sys-modal::backdrop {
     transform: translateX(0);
   }
 }
-/* 左侧端口行：名称始终居中，并保持溢出裁剪 */
+
 #panelList .port-row .port-name {
   flex: 1 1 auto;
   display: flex;
-  justify-content: center;   /* 关键：水平居中 */
+  justify-content: center;
   align-items: center;
   overflow: hidden;
 }
 
-/* 名称文本基态：单行省略，宽度跟随容器 */
 #panelList .port-row .port-name .label {
   display: inline-block;
   white-space: nowrap;
   text-overflow: ellipsis;
   overflow: hidden;
   max-width: 100%;
-  margin: 0 auto;            /* 配合居中 */
+  margin: 0 auto;
 }
 
-/* 悬停滚动时：放开宽度，但依然在父容器中居中显示 */
 #panelList .port-row .port-name.marquee:hover .label {
   text-overflow: clip;
   overflow: visible;
   max-width: none;
-  min-width: max-content;    /* 让 label 宽度按内容展开 */
-  /* 你已有的动画 keyframes: port-marquee 会生效 */
+  min-width: max-content;
 }
 #btnRefreshPorts { display: none; }
+
+#panelList .port-name:hover .label {
+  color: var(--el-color-primary);
+  transform: translateY(-0.5px);
+}
+
+#panelList .port-row {
+  transition: transform .18s ease;
+}
+
+#panelList .port-row.drag-hidden {
+  position: absolute;
+  opacity: 0;
+  pointer-events: none;
+}
+
+#panelList .port-placeholder {
+  height: var(--ph, 40px);
+  border: 2px dashed var(--el-border-dark, #dcdfe6);
+  border-radius: 6px;
+  background: repeating-linear-gradient(45deg, rgba(64,158,255,.08) 0, rgba(64,158,255,.08) 6px, transparent 6px, transparent 12px);
+  margin: 0 0 1px 0;
+}

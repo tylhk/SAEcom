@@ -512,11 +512,9 @@ function startFxLoop() {
         const dt = Math.min(0.033, (now - last) / 1000);
         last = now;
 
-        // 画布复位 & 清屏
         fxCtx.setTransform(fxDPR, 0, 0, fxDPR, 0, 0);
         fxCtx.clearRect(0, 0, fxCanvas.width / fxDPR, fxCanvas.height / fxDPR);
 
-        // 边界
         const bp = document.getElementById('bottomPanel')?.getBoundingClientRect();
         const wsr = document.getElementById('workspace')?.getBoundingClientRect();
         const landY = (bp ? bp.top : window.innerHeight - 190);
@@ -524,7 +522,6 @@ function startFxLoop() {
         const boundRight = wsr ? wsr.right : window.innerWidth;
         const boundTop = wsr ? wsr.top : 0;
 
-        // 仅在“更惊人的动画”开启时启用堆栈
         if (settings.animExtreme) {
             const binW = 4;
             const pileLeft = boundLeft;
@@ -545,7 +542,7 @@ function startFxLoop() {
         }
 
         const extremeHold = settings.animExtreme && (fxEmitActive > 0 || (now - fxLastEmitAt < FX_HOLD_AFTER_EMIT_MS));
-        const extremeFadeT = Math.max(0, now - (fxLastEmitAt + FX_HOLD_AFTER_EMIT_MS)); // 距开始淡出的毫秒数
+        const extremeFadeT = Math.max(0, now - (fxLastEmitAt + FX_HOLD_AFTER_EMIT_MS));
         const extremeFadeK = settings.animExtreme
             ? Math.max(0, 1 - (extremeFadeT / FX_FADE_MS_EXTREME))
             : 1;
@@ -949,7 +946,6 @@ function rand(n = 10) {
   let s = ''; for (let i = 0; i < n; i++) s += cs[(Math.random()*cs.length)|0]; return s;
 }
 
-// 如果宿主提供了 onData，就注册一个回调：收到文本→原样回发
 if (typeof onData === 'function') {
   onData(async (evt) => {
     // evt 可能是 { text, bytes } 或类似结构，做三种兜底
@@ -982,6 +978,7 @@ const scriptNameInput = $('#scriptNameInput');
 const scriptNameOk = $('#scriptNameOk');
 const scriptNameCancel = $('#scriptNameCancel');
 const btnSaveLog = $('#btnSaveLog');
+const btnAddNote = $('#btnAddNote');
 btnSaveLog.addEventListener('click', async () => {
     const id = state.activeId;
     if (!id) return alert('请先选择一个面板');
@@ -998,6 +995,22 @@ btnSaveLog.addEventListener('click', async () => {
     } else if (!res.canceled) {
         alert('保存失败：' + res.error);
     }
+});
+btnAddNote.addEventListener('click', async () => {
+    const id = state.activeId;
+    if (!id) return alert('请先选择一个面板');
+    const pane = state.panes.get(id);
+    if (!pane) return;
+    const v = await uiPrompt('输入备注名', { title: '备注', okText: '确定', cancelText: '重置名称', defaultValue: pane.note || '' });
+    if (v === null || v === undefined) return;
+    const vv = String(v).slice(0, 15);
+    if (vv === '') pane.note = '';
+    else pane.note = vv;
+    activeLabel.textContent = pane.note || pane.info.name;
+    refreshPanelList();
+    window.api.config.save(exportPanelsConfig());
+    const titleNameEl = pane.el.querySelector('.title .name');
+    if (titleNameEl) titleNameEl.textContent = pane.note || pane.info.name;
 });
 
 const state = {
@@ -1044,7 +1057,8 @@ function exportPanelsConfig() {
         top: p.el.style.top || "30px",
         width: p.el.style.width || "420px",
         height: p.el.style.height || "240px",
-        hidden: p.el.classList.contains('hidden')
+        hidden: p.el.classList.contains('hidden'),
+        note: p.note || ''
     }));
 }
 
@@ -1081,6 +1095,16 @@ function appendTextTail(pane, text) {
     if (pane.autoScroll) body.scrollTop = body.scrollHeight;
 }
 
+function appendSysLine(pane, text) {
+    const needBreak = pane.textBuffer && !/\n$/.test(pane.textBuffer);
+    const add = (needBreak ? '\n' : '') + text + '\n';
+    pane.textBuffer += add;
+    pane.hexBuffer += add;
+    pane.chunks.push({ text: add, hex: add, isEcho: false });
+    trimPane(pane);
+    appendTextTail(pane, add);
+}
+  
 function appendNodeTail(pane, node) {
     const body = pane.el.querySelector('.body');
     body.appendChild(node);
@@ -1276,13 +1300,13 @@ function setActive(id) {
     const pane = state.panes.get(id);
     if (pane) {
         pane.el.classList.add('active');
-        activeLabel.textContent = pane.info.name;
+        activeLabel.textContent = pane.note || pane.info.name;
         fillPortSelect(id);
         promotePaneToFront(id);
-        applyBottomPanelForPane(pane); // ← 新增
+        applyBottomPanelForPane(pane);
     } else {
         activeLabel.textContent = '（未选择）';
-        applyBottomPanelForPane(null); // ← 新增
+        applyBottomPanelForPane(null);
     }
 }
 
@@ -1400,10 +1424,6 @@ function createPane(portPath, name) {
                     }
                 } else {
                     btnToggle.textContent = '打开连接';
-                    const msg = '\n[错误] ' + (r?.error || '连接失败') + '\n';
-                    pane.textBuffer += msg; pane.hexBuffer += msg;
-                    pane.chunks.push({ text: msg, hex: msg, isEcho: false });
-                    appendTextTail(pane, msg);
                 }
             } else {
                 pane.options = {
@@ -1418,10 +1438,6 @@ function createPane(portPath, name) {
                     btnToggle.textContent = '关闭串口';
                 } else {
                     btnToggle.textContent = '打开串口';
-                    const msg = '\n[错误] ' + (r?.error || '打开失败') + '\n';
-                    pane.textBuffer += msg; pane.hexBuffer += msg;
-                    pane.chunks.push({ text: msg, hex: msg, isEcho: false });
-                    appendTextTail(pane, msg);
                 }
             }
         }
@@ -1658,9 +1674,14 @@ function createPane(portPath, name) {
     if (saved) {
         el.style.left = saved.left; el.style.top = saved.top;
         el.style.width = saved.width; el.style.height = saved.height;
-        if (saved.options) state.panes.get(id).options = saved.options;
+        const paneObjSaved = state.panes.get(id);
+        if (saved.options) paneObjSaved.options = saved.options;
         if (saved.hidden) el.classList.add('hidden');
+        if (typeof saved.note === 'string') paneObjSaved.note = saved.note;
+        const t = el.querySelector('.title .name');
+        if (t) t.textContent = (paneObjSaved.note && paneObjSaved.note.trim()) ? paneObjSaved.note : (paneObjSaved.info.name || id);
     }
+
 
     refreshPanelList();
     if (!saved || !saved.hidden) setActive(id);
@@ -1668,10 +1689,22 @@ function createPane(portPath, name) {
 }
 
 function refreshPanelList() {
+    state.panes.forEach((pane) => {
+        const t = pane.el?.querySelector('.title .name');
+        if (t) t.textContent = (pane.note && pane.note.trim()) ? pane.note : (pane.info.name || pane.id || '');
+    });
     panelListEl.innerHTML = '';
     state.panes.forEach((pane, id) => {
         const li = document.createElement('li');
         li.className = 'port-row';
+        li.draggable = true;
+        li.dataset.id = id;
+        li.addEventListener('dragstart', (e) => {
+            e.dataTransfer.effectAllowed = 'move';
+            state.draggingId = id;
+        });
+        li.addEventListener('dragend', () => { state.draggingId = null; });
+
 
         const kind = pane.type === 'tcp' ? '连接' : '串口';
 
@@ -1720,9 +1753,20 @@ function refreshPanelList() {
         nameEl.title = pane.info.name || id;
         const label = document.createElement('span');
         label.className = 'label';
-        label.textContent = pane.info.name || id;
+        label.textContent = (pane.note && pane.note.trim()) ? pane.note : (pane.info.name || id);
         nameEl.appendChild(label);
-        nameEl.onclick = () => { pane.el.classList.remove('hidden'); setActive(id); };
+        nameEl.onclick = () => {
+            const hidden = pane.el.classList.contains('hidden');
+            if (hidden) {
+                pane.el.classList.remove('hidden');
+                setActive(id);
+            } else {
+                pane.el.classList.add('hidden');
+                if (state.activeId === id) setActive(null);
+            }
+            window.api.config.save(exportPanelsConfig());
+        };
+
         const applyMarquee = () => {
             const delta = Math.max(0, label.scrollWidth - nameEl.clientWidth);
             nameEl.classList.toggle('marquee', delta > 0);
@@ -1764,6 +1808,116 @@ function refreshPanelList() {
         li.append(statusBtn, nameEl, act);
         panelListEl.appendChild(li);
     });
+    if (!panelListEl._dndInited) {
+        panelListEl._dndInited = true;
+
+        function captureRects() {
+            const m = new Map();
+            panelListEl.querySelectorAll('li.port-row:not(.drag-hidden)').forEach(li => {
+                m.set(li.dataset.id, li.getBoundingClientRect().top);
+            });
+            return m;
+        }
+
+        function animateFLIP(before) {
+            const after = new Map();
+            panelListEl.querySelectorAll('li.port-row:not(.drag-hidden)').forEach(li => {
+                after.set(li.dataset.id, li.getBoundingClientRect().top);
+            });
+            panelListEl.querySelectorAll('li.port-row:not(.drag-hidden)').forEach(li => {
+                const id = li.dataset.id;
+                const dy = (before.get(id) ?? after.get(id)) - after.get(id);
+                if (!dy) return;
+                li.style.transform = `translateY(${dy}px)`;
+                li.getBoundingClientRect();
+                li.style.transition = 'transform .18s ease';
+                li.style.transform = '';
+                li.addEventListener('transitionend', function te() {
+                    li.style.transition = '';
+                    li.removeEventListener('transitionend', te);
+                });
+            });
+        }
+
+        panelListEl.addEventListener('dragstart', (e) => {
+            const li = e.target.closest('li.port-row');
+            if (!li) return;
+            const id = li.dataset.id;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', id);
+            state.draggingId = id;
+
+            const ph = document.createElement('li');
+            ph.className = 'port-row port-placeholder';
+            ph.style.setProperty('--ph', li.offsetHeight + 'px');
+            state.placeholderEl = ph;
+
+            requestAnimationFrame(() => {
+                li.classList.add('drag-hidden');
+                if (!ph.parentNode) {
+                    panelListEl.insertBefore(ph, li.nextSibling);
+                }
+            });
+        });
+
+        panelListEl.addEventListener('dragover', (e) => {
+            const draggingId = state.draggingId;
+            if (!draggingId) return;
+            e.preventDefault();
+
+            const beforeRects = captureRects();
+            const ph = state.placeholderEl;
+            if (!ph.parentNode) panelListEl.appendChild(ph);
+
+            const targetLi = e.target.closest('li.port-row');
+            if (targetLi && targetLi !== ph && !targetLi.classList.contains('drag-hidden')) {
+                const rect = targetLi.getBoundingClientRect();
+                const before = e.clientY < rect.top + rect.height / 2;
+                if (before) panelListEl.insertBefore(ph, targetLi);
+                else panelListEl.insertBefore(ph, targetLi.nextSibling);
+            } else if (!targetLi) {
+                panelListEl.appendChild(ph);
+            }
+
+            animateFLIP(beforeRects);
+        });
+
+        panelListEl.addEventListener('drop', (e) => {
+            e.preventDefault();
+            const ph = state.placeholderEl;
+            const draggingId = state.draggingId;
+            const hiddenLi = panelListEl.querySelector('li.port-row.drag-hidden');
+
+            if (ph && hiddenLi) {
+                panelListEl.insertBefore(hiddenLi, ph);
+            }
+            if (ph && ph.parentNode) ph.parentNode.removeChild(ph);
+            if (hiddenLi) hiddenLi.classList.remove('drag-hidden');
+
+            state.placeholderEl = null;
+            state.draggingId = null;
+
+            state.listOrder = Array.from(panelListEl.querySelectorAll('li.port-row')).map(li => li.dataset.id);
+            window.api.config.save(exportPanelsConfig());
+        });
+
+        panelListEl.addEventListener('dragend', () => {
+            const ph = state.placeholderEl;
+            const hiddenLi = panelListEl.querySelector('li.port-row.drag-hidden');
+            if (ph && hiddenLi) panelListEl.insertBefore(hiddenLi, ph);
+            if (ph && ph.parentNode) ph.parentNode.removeChild(ph);
+            if (hiddenLi) hiddenLi.classList.remove('drag-hidden');
+            state.placeholderEl = null;
+            state.draggingId = null;
+        });
+    }
+
+    if (Array.isArray(state.listOrder) && state.listOrder.length) {
+        const orderMap = new Map(state.listOrder.map((x, i) => [x, i]));
+        const nodes = Array.from(panelListEl.children);
+        nodes.sort((a, b) => (orderMap.get(a.dataset.id) ?? 1e9) - (orderMap.get(b.dataset.id) ?? 1e9));
+        nodes.forEach(n => panelListEl.appendChild(n));
+    }
 }
 
 function formatBytes(bytes, mode = 'text') {
@@ -1918,19 +2072,19 @@ window.api.serial.onEvent((evt) => {
 
     let add = '';
     if (evt.type === 'open') {
-        if (!pane._openNotified) { add = `\n[已打开]\n`; pane._openNotified = true; }
+        if (!pane._openNotified) { add = `[已打开]\n`; pane._openNotified = true; }
         pane.open = true;
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = '关闭串口';
     } else if (evt.type === 'close') {
-        add = `\n[已关闭]\n`;
+        add = `[已关闭]\n`;
         pane.open = false;
         pane._openNotified = false;
         if (pane.autoTimer) { clearInterval(pane.autoTimer); pane.autoTimer = null; }
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = '打开串口';
     } else if (evt.type === 'error') {
-        add = `\n[错误] ${evt.message}\n`;
+        add = `[错误] ${evt.message}\n`;
     }
 
     if (add) {
@@ -1951,16 +2105,16 @@ window.api.tcp.onEvent((evt) => {
         pane.open = true;
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = (pane.type === 'tcp') ? '关闭连接' : '关闭串口';
-        if (!pane._openNotified) { add = `\n[已打开]\n`; pane._openNotified = true; }
+        if (!pane._openNotified) { add = `[已打开]\n`; pane._openNotified = true; }
     } else if (evt.type === 'close') {
-        add = `\n[已关闭]\n`;
+        add = `[已关闭]\n`;
         pane.open = false;
         pane._openNotified = false;
         if (pane.autoTimer) { clearInterval(pane.autoTimer); pane.autoTimer = null; }
         const btn = pane.el.querySelector('.btnToggle');
         if (btn) btn.textContent = (pane.type === 'tcp') ? '打开连接' : '打开串口';
     } else if (evt.type === 'error') {
-        add = `\n[错误] ${evt.message}\n`;
+        add = `[错误] ${evt.message}\n`;
     }
     if (add) {
         pane.textBuffer += add;
@@ -2696,6 +2850,87 @@ function clampAllPanesToWorkspace() {
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) setTimeout(safeRefocusInput, 0);
     });
+
+    (function injectShareControls() {
+        const row = document.querySelector('#page-serial .row');
+        if (!row) return;
+
+        const shareGroup = document.createElement('div');
+        shareGroup.id = 'shareTcpGroup';
+        shareGroup.style.display = 'inline-flex';
+        shareGroup.style.alignItems = 'center';
+        shareGroup.style.gap = '6px';
+        shareGroup.style.marginLeft = '12px';
+
+        shareGroup.innerHTML = `
+      <label style="color:#606266;">共享端口</label>
+      <input id="sharePort" type="number" min="1" max="65535" value="9000" style="width:90px;height:26px">
+      <button id="btnShareTcp">共享为 TCP</button>
+      <span id="shareInfo" style="margin-left:6px;color:#409EFF;"></span>
+      <button id="btnCopyShare" title="复制地址" style="display:none">复制</button>
+    `;
+        row.appendChild(shareGroup);
+
+        const btn = document.getElementById('btnShareTcp');
+        const portInput = document.getElementById('sharePort');
+        const info = document.getElementById('shareInfo');
+        const btnCopy = document.getElementById('btnCopyShare');
+
+        async function refreshShareUI() {
+            const id = state.activeId;
+            const pane = id ? state.panes.get(id) : null;
+            const isSerial = !!pane && pane.type !== 'tcp';
+            shareGroup.style.display = isSerial ? 'inline-flex' : 'none';
+            info.textContent = '';
+            btnCopy.style.display = 'none';
+            if (!isSerial) return;
+
+            const st = await window.api.tcpShare.status(id);
+            if (st.active) {
+                btn.textContent = '停止共享为 TCP';
+                const first = (st.addrs && st.addrs[0]) || '';
+                info.textContent = first ? `已共享：${first}` : `已共享：端口 ${st.port}`;
+                btnCopy.style.display = first ? '' : 'none';
+                btnCopy.onclick = () => {
+                    navigator.clipboard.writeText(first).catch(() => { });
+                    info.textContent = `${first}（已复制）`;
+                    setTimeout(refreshShareUI, 800);
+                };
+                portInput.value = String(st.port || 9000);
+            } else {
+                btn.textContent = '共享为 TCP';
+            }
+        }
+
+        btn.addEventListener('click', async () => {
+            const id = state.activeId;
+            if (!id) return alert('请先选择一个面板');
+            const pane = state.panes.get(id);
+            if (!pane || pane.type === 'tcp') return alert('当前是 TCP 面板，只有串口面板可共享');
+            if (!pane.open) return alert('请先打开串口再共享');
+
+            const st = await window.api.tcpShare.status(id);
+            if (st.active) {
+                await window.api.tcpShare.stop(id);
+            } else {
+                const p = parseInt(portInput.value || '9000', 10) || 9000;
+                const r = await window.api.tcpShare.start(id, p);
+                if (!r.ok) return alert('启动共享失败');
+            }
+            refreshShareUI();
+        });
+
+        const _setActive = setActive;
+        setActive = function patchedSetActive(id) {
+            _setActive(id);
+            refreshShareUI();
+        };
+        window.api.serial.onEvent((evt) => {
+            if (evt.id === state.activeId) refreshShareUI();
+        });
+
+        setTimeout(refreshShareUI, 300);
+    })();
 
     updateDeleteSelectedBtn();
 

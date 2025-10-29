@@ -14,6 +14,11 @@ contextBridge.exposeInMainWorld('api', {
     onData: (cb) => ipcRenderer.on('tcp:data', (_e, p) => cb({ id: p.id, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
     onEvent: (cb) => ipcRenderer.on('tcp:event', (_e, p) => cb(p)),
   },  
+  tcpShare: {
+    start: (id, port) => ipcRenderer.invoke('tcpShare:start', { id, port }),
+    stop:  (id)       => ipcRenderer.invoke('tcpShare:stop',  { id }),
+    status:(id)       => ipcRenderer.invoke('tcpShare:status',{ id })
+  },
   window: {
     setFullscreen: (flag) => ipcRenderer.send('window:set-fullscreen', { flag }),
     toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen')
