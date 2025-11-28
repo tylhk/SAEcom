@@ -44,7 +44,8 @@
                         <button id="btnAddNote">添加备注</button>
                         <button id="btnSaveLog">导出面板数据</button>
                     </div>
-                    <div class="row">
+
+                    <div class="row" id="serial-param-row">
                         <label>波特率：</label>
                         <input id="baud" type="number" value="115200" min="110" step="1" />
                         <label>数据位：</label>
@@ -68,14 +69,18 @@
                             <option value="space">space</option>
                         </select>
                     </div>
-                    <div class="row" id="row-send-main">
-                        <label>发送：</label>
-                        <input id="inputData" type="text" placeholder="输入要发送的数据…" />
-                        <button id="btnSend">发送</button>
-                        <label><input type="checkbox" id="echoSend"> 回显</label>
+
+                    <div class="row" id="row-share-container"
+                        style="display:none; align-items:center; margin-bottom:6px;">
                     </div>
 
-                    <div class="row" id="row-send-opts">
+                    <div class="row" id="row-send-main">
+                        <input id="inputData" type="text" placeholder="输入要发送的数据…" />
+                        <button id="btnSend">发送</button>
+                    </div>
+
+                    <div class="row split-line" id="row-send-opts">
+                        <label>发送结尾：</label>
                         <select id="append">
                             <option value="CRLF">CRLF</option>
                             <option value="none">无结尾</option>
@@ -84,7 +89,8 @@
                         </select>
                         <label>缓冲(ms):</label>
                         <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
-                        <label><input type="checkbox" id="hexMode"> HEX发送</label>
+                        <label><input type="checkbox" id="hexMode"> 以HEX格式发送</label>
+                        <label><input type="checkbox" id="echoSend"> 发送回显</label>
                     </div>
 
                     <div class="row">
@@ -95,7 +101,6 @@
                         <button id="btnSendFile">发送文件</button>
                     </div>
                 </div>
-
                 <div class="page" id="page-commands" style="display:none">
                     <div class="cmd-layout">
                         <div id="cmdGrid" class="cmd-grid"></div>
@@ -141,6 +146,10 @@
                             博客链接
                         </a>
                     </p>
+                    <p style="display:flex; align-items:center; gap:10px;">
+                        <span>当前版本：<span id="appVersion">...</span></span>
+                        <button id="btnCheckUpdate" style="height:24px; padding:0 10px;">检查更新</button>
+                    </p>
                 </div>
 
             </div>
@@ -176,12 +185,24 @@
         </dialog>
 
         <dialog id="dlgCmdEdit">
+
+            <div class="cmd-group-bar">
+                <label for="cmdGroupSelect">分组：</label>
+                <select id="cmdGroupSelect"></select>
+                <button id="cmdGroupNew">新建</button>
+                <button id="cmdGroupRename">重命名</button>
+                <button id="cmdGroupDelete">删除</button>
+                <span class="cmd-group-show-toggle">
+                    <label><input type="checkbox" id="cmdGroupShow"> 在命令页显示本分组</label>
+                </span>
+            </div>
+
             <h3>编辑命令</h3>
             <div class="cmd-table-wrap">
                 <table class="cmd-table">
                     <thead>
                         <tr>
-                            <th class="drag" style="width:36px;">序</th>
+                            <th class="drag" style="width:57px;">排序</th>
                             <th class="sel" style="width:44px;">
                                 <input id="cmdSelectAll" type="checkbox" title="全选/全不选">
                             </th>
@@ -198,6 +219,8 @@
                 <button id="cmdAdd">新增命令</button>
                 <span style="flex:1"></span>
                 <button id="cmdDeleteSel">删除选中</button>
+                <button id="cmdMoveSel">移动选中</button>
+                <button id="cmdCopySel">复制选中</button>
                 <button id="cmdCancel">取消</button>
                 <button id="cmdSave">保存</button>
             </div>

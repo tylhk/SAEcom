@@ -24,12 +24,15 @@ const LOG_MAX_CHARS = 1000000;
 const cmdDeleteSel = $('#cmdDeleteSel');
 const cmdTableBody = document.getElementById('cmdTableBody');
 const cmdSelectAll = document.getElementById('cmdSelectAll');
+const cmdMoveSel = $('#cmdMoveSel');
+const cmdCopySel = $('#cmdCopySel');
 const useTcp = $('#useTcp');
 const tcpFields = $('#tcpFields');
 const serialFields = $('#serialFields');
 const tcpHost = $('#tcpHost');
 const tcpPort = $('#tcpPort');
 let commandsSnapshot = null;
+let cmdGroupsMetaSnapshot = null;
 let CMD_DND = {
     active: false,
     row: null,
@@ -82,6 +85,7 @@ function ensureSysModal() {
           <div class="title" id="smTitle">提示</div>
           <div class="msg" id="smMsg"></div>
           <input id="smInput" class="prompt-input" style="display:none" />
+          <select id="smSelect" class="prompt-select" style="display:none"></select>
           <div class="actions">
             <button value="cancel" id="smCancel">取消</button>
             <button value="ok" id="smOk" class="primary">确定</button>
@@ -104,19 +108,20 @@ function ensureSysModal() {
         title: dlg.querySelector('#smTitle'),
         msg: dlg.querySelector('#smMsg'),
         input: dlg.querySelector('#smInput'),
+        select: dlg.querySelector('#smSelect'),
         ok: dlg.querySelector('#smOk'),
         cancel: dlg.querySelector('#smCancel')
     };
 }
 
 function uiAlert(message, { title = '提示', okText = '知道了' } = {}) {
-    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    const { dlg, title: t, msg, input, select, ok, cancel } = ensureSysModal();
+    ok.classList.remove('danger');
+
     t.textContent = title;
-    msg.innerHTML = '';
-    const node = (/\n/.test(message) || message.length > 80) ? document.createElement('pre') : document.createTextNode(message);
-    if (node.tagName === 'PRE') node.textContent = message;
-    msg.appendChild(node);
+    msg.textContent = message || '';
     input.style.display = 'none';
+    if (select) select.style.display = 'none';
     cancel.style.display = 'none';
     ok.textContent = okText;
 
@@ -130,13 +135,11 @@ function uiAlert(message, { title = '提示', okText = '知道了' } = {}) {
 }
 
 function uiConfirm(message, { title = '确认', okText = '确定', cancelText = '取消', danger = false } = {}) {
-    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    const { dlg, title: t, msg, input, select, ok, cancel } = ensureSysModal();
     t.textContent = title;
-    msg.innerHTML = '';
-    const node = (/\n/.test(message) || message.length > 80) ? document.createElement('pre') : document.createTextNode(message);
-    if (node.tagName === 'PRE') node.textContent = message;
-    msg.appendChild(node);
+    msg.textContent = message || '';
     input.style.display = 'none';
+    if (select) select.style.display = 'none';
     cancel.style.display = '';
     ok.textContent = okText;
     cancel.textContent = cancelText;
@@ -149,6 +152,7 @@ function uiConfirm(message, { title = '确认', okText = '确定', cancelText = 
         cancel.focus();
     });
 }
+
 function logToPane(pane, text) {
     const msg = String(text ?? '');
     pane.textBuffer += msg;
@@ -157,10 +161,13 @@ function logToPane(pane, text) {
     appendTextTail(pane, msg);
 }
 function uiPrompt(message, { title = '输入', okText = '确定', cancelText = '取消', defaultValue = '' } = {}) {
-    const { dlg, title: t, msg, input, ok, cancel } = ensureSysModal();
+    const { dlg, title: t, msg, input, select, ok, cancel } = ensureSysModal();
+    ok.classList.remove('danger');
+
     t.textContent = title;
     msg.textContent = message || '';
     input.style.display = '';
+    if (select) select.style.display = 'none';
     input.value = defaultValue || '';
     ok.textContent = okText;
     cancel.textContent = cancelText;
@@ -171,6 +178,45 @@ function uiPrompt(message, { title = '输入', okText = '确定', cancelText = '
         input.onkeydown = (e) => { if (e.key === 'Enter') ok.click(); };
         try { dlg.showModal(); } catch { }
         setTimeout(() => input.select(), 0);
+    });
+}
+
+function uiSelect(message, {
+    title = '选择',
+    okText = '确定',
+    cancelText = '取消',
+    items = []
+} = {}) {
+    const { dlg, title: t, msg, input, select, ok, cancel } = ensureSysModal();
+    ok.classList.remove('danger');
+
+    t.textContent = title;
+    msg.textContent = message || '';
+    input.style.display = 'none';
+    select.style.display = '';
+    select.innerHTML = '';
+
+    (items || []).forEach(it => {
+        const opt = document.createElement('option');
+        if (typeof it === 'string') {
+            opt.value = it;
+            opt.textContent = it;
+        } else {
+            opt.value = it.value;
+            opt.textContent = it.label;
+        }
+        select.appendChild(opt);
+    });
+
+    ok.textContent = okText;
+    cancel.textContent = cancelText;
+    cancel.style.display = '';
+
+    return new Promise(resolve => {
+        ok.onclick = () => { const v = select.value; dlg.close('ok'); resolve(v); };
+        cancel.onclick = () => { dlg.close('cancel'); resolve(''); };
+        try { dlg.showModal(); } catch { }
+        setTimeout(() => select.focus(), 0);
     });
 }
 
@@ -838,13 +884,13 @@ function bounce(el) {
     void el.offsetWidth;
     el.classList.add('fx-pop');
 }
+
 function applyBottomPanelForPane(pane) {
     const btnTab = document.querySelector('#bottomNav button[data-page="serial"]');
     const serialPage = document.getElementById('page-serial');
     if (!btnTab || !serialPage) return;
 
-    const rows = serialPage.querySelectorAll('.row');
-    const serialParamsRow = rows && rows[1];
+    const serialParamsRow = document.getElementById('serial-param-row') || serialPage.querySelectorAll('.row')[2];
 
     const isTcp = !!pane && (pane.type === 'tcp' || (pane.info?.path || '').startsWith('tcp://'));
     btnTab.textContent = isTcp ? '端口' : '串口';
@@ -868,12 +914,25 @@ window.addEventListener('click', (e) => {
         shakeScreenRandom(9, 0.55);
     }
 }, true);
+
 function updateDeleteSelectedBtn() {
-    const btn = document.getElementById('cmdDeleteSel');
+    const btnDel = document.getElementById('cmdDeleteSel');
+    const btnMove = document.getElementById('cmdMoveSel');
+    const btnCopy = document.getElementById('cmdCopySel');
     const any = !!cmdTableBody?.querySelector('.rowSel:checked');
-    if (!btn) return;
-    btn.disabled = !any;
-    btn.classList.toggle('danger', any);
+
+    if (btnDel) {
+        btnDel.disabled = !any;
+        btnDel.classList.toggle('danger', any);
+    }
+    if (btnMove) {
+        btnMove.disabled = !any;
+        btnMove.classList.toggle('active', any);
+    }
+    if (btnCopy) {
+        btnCopy.disabled = !any;
+        btnCopy.classList.toggle('active', any);
+    }
 }
 
 const btnNew = $('#btnNew');
@@ -888,6 +947,7 @@ const baud = $('#baud');
 const databits = $('#databits');
 const stopbits = $('#stopbits');
 const parity = $('#parity');
+const sendRowMain = $('#row-send-main');
 const inputData = $('#inputData');
 const hexMode = $('#hexMode');
 const appendSel = $('#append');
@@ -910,6 +970,12 @@ const cmdNext = $('#cmdNext');
 const cmdEditPage = $('#cmdEditPage');
 const cmdRepeat = $('#cmdRepeat');
 const cmdRepeatMs = $('#cmdRepeatMs');
+
+const cmdGroupSelect = document.getElementById('cmdGroupSelect');
+const cmdGroupNew = document.getElementById('cmdGroupNew');
+const cmdGroupRename = document.getElementById('cmdGroupRename');
+const cmdGroupDelete = document.getElementById('cmdGroupDelete');
+const cmdGroupShow = document.getElementById('cmdGroupShow');
 
 const dlgCmdEdit = $('#dlgCmdEdit');
 const cmdAdd = $('#cmdAdd');
@@ -1013,6 +1079,101 @@ btnAddNote.addEventListener('click', async () => {
     if (titleNameEl) titleNameEl.textContent = pane.note || pane.info.name;
 });
 
+const CMD_GROUPS_KEY = 'cmdGroupsMeta';
+
+function loadCmdGroupsMeta() {
+    try {
+        const raw = localStorage.getItem(CMD_GROUPS_KEY);
+        let obj;
+        if (!raw) obj = { groups: ['默认分组'], active: '默认分组' };
+        else {
+            obj = JSON.parse(raw);
+            if (!obj || typeof obj !== 'object') obj = { groups: ['默认分组'], active: '默认分组' };
+        }
+
+        if (!Array.isArray(obj.groups) || !obj.groups.length) obj.groups = ['默认分组'];
+        if (!obj.active || !obj.groups.includes(obj.active)) obj.active = obj.groups[0];
+
+        if (!Array.isArray(obj.visible)) obj.visible = [...obj.groups];
+        else {
+            obj.visible = obj.visible.filter(g => obj.groups.includes(g));
+            if (!obj.visible.length) obj.visible = [...obj.groups];
+        }
+
+        return obj;
+    } catch {
+        return { groups: ['默认分组'], active: '默认分组', visible: ['默认分组'] };
+    }
+}
+
+
+function saveCmdGroupsMeta(meta) {
+    try {
+        localStorage.setItem(CMD_GROUPS_KEY, JSON.stringify(meta || { groups: ['默认分组'], active: '默认分组' }));
+    } catch { }
+}
+
+function getActiveGroup() {
+    const meta = state.cmdGroupsMeta;
+    if (!meta || !meta.active) return '默认分组';
+    return meta.active;
+}
+
+function getVisibleGroups() {
+    const meta = state.cmdGroupsMeta || { groups: ['默认分组'], active: '默认分组', visible: null };
+    const groups = Array.isArray(meta.groups) && meta.groups.length ? meta.groups : ['默认分组'];
+
+    let visible = Array.isArray(meta.visible)
+        ? meta.visible.filter(g => groups.includes(g))
+        : [];
+    if (!visible.length) visible = groups;
+
+    return visible;
+}
+
+function getVisibleCommands() {
+    const vs = new Set(getVisibleGroups());
+    return state.commands.filter(c => vs.has(c.group || '默认分组'));
+}
+
+function syncCmdGroupsMetaWithCommands() {
+    let meta = state.cmdGroupsMeta;
+    if (!meta || typeof meta !== 'object') meta = { groups: [], active: '', visible: [] };
+    if (!Array.isArray(meta.groups)) meta.groups = [];
+
+    const groupsSet = new Set(meta.groups);
+
+    if (meta.groups.length === 0) {
+        meta.groups.push('默认分组');
+        groupsSet.add('默认分组');
+    }
+
+    state.commands.forEach(cmd => {
+        if (!cmd.group) {
+            cmd.group = meta.groups[0];
+        }
+
+        let g = cmd.group;
+        if (!groupsSet.has(g)) {
+            groupsSet.add(g);
+            meta.groups.push(g);
+        }
+    });
+
+    if (!meta.active || !groupsSet.has(meta.active)) {
+        meta.active = meta.groups[0];
+    }
+
+    if (!Array.isArray(meta.visible)) meta.visible = [...meta.groups];
+    else {
+        meta.visible = meta.visible.filter(g => groupsSet.has(g));
+        if (!meta.visible.length) meta.visible = [...meta.groups];
+    }
+
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+}
+
 const state = {
     panes: new Map(),
     activeId: null,
@@ -1025,6 +1186,7 @@ const state = {
     cmdCols: 1,
     cmdRows: 1,
     cmdIntervalMap: new Map(),
+    cmdGroupsMeta: loadCmdGroupsMeta(),
 
     paneOrder: []
 };
@@ -1047,7 +1209,17 @@ function promotePaneToFront(id) {
 }
 
 function exportPanelsConfig() {
-    return Array.from(state.panes.values()).map(p => ({
+    const panes = Array.from(state.panes.values());
+
+    if (Array.isArray(state.listOrder) && state.listOrder.length > 0) {
+        const orderMap = new Map(state.listOrder.map((id, index) => [id, index]));
+        panes.sort((a, b) => {
+            const ia = orderMap.has(a.info.path) ? orderMap.get(a.info.path) : 999999;
+            const ib = orderMap.has(b.info.path) ? orderMap.get(b.info.path) : 999999;
+            return ia - ib;
+        });
+    }
+    return panes.map(p => ({
         id: p.info.path,
         path: p.info.path,
         name: p.info.name,
@@ -1104,7 +1276,7 @@ function appendSysLine(pane, text) {
     trimPane(pane);
     appendTextTail(pane, add);
 }
-  
+
 function appendNodeTail(pane, node) {
     const body = pane.el.querySelector('.body');
     body.appendChild(node);
@@ -1295,21 +1467,62 @@ function echoIfEnabled(id, text) {
 }
 
 function setActive(id) {
+    if (state.activeId && state.activeId !== id && inputData) {
+        const prevPane = state.panes.get(state.activeId);
+        if (prevPane) {
+            prevPane.sendText = inputData.value || '';
+        }
+    }
+
     state.activeId = id;
     $$('.pane').forEach(p => p.classList.remove('active'));
     const pane = state.panes.get(id);
+
     if (pane) {
         pane.el.classList.add('active');
         activeLabel.textContent = pane.note || pane.info.name;
+
+        if (typeof pane.sendText === 'string' && inputData) {
+            inputData.value = pane.sendText;
+        }
+
+        mountSendBarForPane(pane);
+
         fillPortSelect(id);
         promotePaneToFront(id);
         applyBottomPanelForPane(pane);
     } else {
         activeLabel.textContent = '（未选择）';
         applyBottomPanelForPane(null);
+
+        if (sendRowMain) {
+            sendRowMain.style.display = 'none';
+        }
     }
 }
 
+function mountSendBarForPane(pane) {
+    if (!sendRowMain || !pane) return;
+
+    if (!mountSendBarForPane._movedOnce && sendRowMain.parentElement) {
+        sendRowMain.parentElement.removeChild(sendRowMain);
+        mountSendBarForPane._movedOnce = true;
+    }
+
+    sendRowMain.classList.add('pane-send-row');
+    sendRowMain.style.display = '';
+
+    const body = pane.el.querySelector('.body');
+    const firstResizer = pane.el.querySelector('.resizer');
+
+    if (body && firstResizer && firstResizer.parentElement === pane.el) {
+        pane.el.insertBefore(sendRowMain, firstResizer);
+    } else if (body) {
+        body.insertAdjacentElement('afterend', sendRowMain);
+    } else {
+        pane.el.appendChild(sendRowMain);
+    }
+}
 
 function fillPortSelect(activeId) {
     const pane = state.panes.get(activeId);
@@ -1426,6 +1639,13 @@ function createPane(portPath, name) {
                     btnToggle.textContent = '打开连接';
                 }
             } else {
+                if (!state.knownPorts.some(p => p.path === id)) {
+                    appendSysLine(state.panes.get(id), '[错误] 端口不存在或已拔出');
+                    await refreshPortsCombo();
+                    btnToggle.textContent = '打开串口';
+                    refreshPanelList();
+                    return;
+                }
                 pane.options = {
                     baudRate: parseInt(baud.value, 10),
                     dataBits: parseInt(databits.value, 10),
@@ -1438,6 +1658,7 @@ function createPane(portPath, name) {
                     btnToggle.textContent = '关闭串口';
                 } else {
                     btnToggle.textContent = '打开串口';
+                    appendSysLine(pane, '[错误] ' + (r && r.error ? r.error : '打开失败'));
                 }
             }
         }
@@ -1465,8 +1686,13 @@ function createPane(portPath, name) {
     el.querySelector('.btnPop').addEventListener('click', (e) => {
         e.stopPropagation();
         const html = el.querySelector('.body').innerHTML;
-        window.api.panel.popout(id, name, html);
+        const pane = state.panes.get(id);
+        const popTitle = (pane && pane.note) ? pane.note : name;
+        window.api.panel.popout(id, popTitle, html);
         el.classList.add('hidden');
+        if (state.activeId === id) {
+            setActive(null);
+        }
         refreshPanelList();
         window.api.config.save(exportPanelsConfig());
     });
@@ -1659,7 +1885,8 @@ function createPane(portPath, name) {
         hexBuffer: '',
         groupTimer: null,
         groupOpen: false,
-        autoScroll: true
+        autoScroll: true,
+        sendText: '',
     });
 
     const paneObj = state.panes.get(id);
@@ -1725,14 +1952,32 @@ function refreshPanelList() {
                     const r = await window.api.tcp.open(s.slice(0, i), parseInt(s.slice(i + 1), 10), null);
                     if (!(r && r.ok)) { refreshPanelList(); return; }
                 } else {
-                    p.options = {
-                        baudRate: parseInt(baud.value, 10),
-                        dataBits: parseInt(databits.value, 10),
-                        stopBits: parseInt(stopbits.value, 10),
-                        parity: parity.value
-                    };
-                    const r = await window.api.serial.open(id, p.options);
-                    if (!(r && r.ok)) { refreshPanelList(); return; }
+                    if (!state.knownPorts.some(pp => pp.path === id)) {
+                        const p2 = state.panes.get(id);
+                        if (p2) appendSysLine(p2, '[错误] 端口不存在或已拔出');
+                        await refreshPortsCombo();
+                        refreshPanelList();
+                        return;
+                    }
+                    const opts = (p.options && typeof p.options === 'object')
+                        ? p.options
+                        : {
+                            baudRate: 115200,
+                            dataBits: 8,
+                            stopBits: 1,
+                            parity: 'none'
+                        };
+
+                    const r = await window.api.serial.open(id, opts);
+                    if (r && r.ok) {
+                        p.options = opts;
+                    }
+                    if (!(r && r.ok)) {
+                        const p2 = state.panes.get(id);
+                        if (p2) appendSysLine(p2, '[错误] ' + (r && r.error ? r.error : '打开失败'));
+                        refreshPanelList();
+                        return;
+                    }
                 }
                 p.open = true;
                 const btn = p.el?.querySelector('.btnToggle');
@@ -2137,9 +2382,7 @@ window.api.panel.onDockRequest(({ id, html }) => {
     const pane = state.panes.get(id);
     const body = pane.el.querySelector('.body');
 
-    const tmp = document.createElement('div');
-    tmp.innerHTML = html || '';
-    const text = tmp.innerText || tmp.textContent || '';
+    const text = html || '';
 
     pane.textBuffer = text;
     pane.hexBuffer = text;
@@ -2157,9 +2400,6 @@ window.api.panel.onDockRequest(({ id, html }) => {
     pane.el.classList.remove('hidden');
     setActive(id);
 });
-
-
-
 
 toggleSidebarBtn.addEventListener('click', () => {
     const opening = !sidebarEl.classList.contains('open');
@@ -2216,6 +2456,13 @@ async function refreshPortsCombo() {
     fillPortSelect(state.activeId);
 }
 btnRefreshPorts.addEventListener('click', refreshPortsCombo);
+
+inputData.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        btnSend.click();
+    }
+});
 
 btnSend.addEventListener('click', async () => {
     const id = state.activeId;
@@ -2456,12 +2703,15 @@ function calcCmdLayout() {
 
 function totalCmdPages() {
     const pageSize = state.cmdCols * state.cmdRows;
-    return Math.max(1, Math.ceil(state.commands.length / pageSize));
+    const list = getVisibleCommands();
+    const total = Math.ceil(list.length / pageSize);
+    return Math.max(1, total || 1);
 }
 function pageSlice(pageIdx) {
     const pageSize = state.cmdCols * state.cmdRows;
+    const list = getVisibleCommands();
     const start = pageIdx * pageSize;
-    return state.commands.slice(start, start + pageSize);
+    return list.slice(start, start + pageSize);
 }
 
 function buildPreview(cmd) {
@@ -2511,7 +2761,7 @@ function renderCmdGrid() {
         const btn = document.createElement('button');
         btn.className = 'send';
         btn.textContent = cmd.name || '(未命名)';
-        btn.title = '点击发送';
+        btn.title = `分组：${cmd.group}`;
         btn.onclick = () => sendCommand(cmd, card);
         const prev = buildPreview(cmd);
         if (state.cmdIntervalMap.has(cmd.id)) card.classList.add('auto');
@@ -2526,6 +2776,15 @@ function renderCmdGrid() {
         cmdGrid.appendChild(placeholder);
     }
 }
+
+cmdGrid.addEventListener('wheel', (e) => {
+    if (!document.getElementById('page-commands')?.offsetParent) return;
+    if (Math.abs(e.deltaY) < 1) return;
+    e.preventDefault();
+    const pages = totalCmdPages();
+    state.cmdPage = (state.cmdPage + (e.deltaY > 0 ? 1 : -1) + pages) % pages;
+    renderCmdGrid();
+}, { passive: false });
 
 async function sendCommand(cmd, cardEl) {
     const id = state.activeId;
@@ -2590,11 +2849,22 @@ function makeCmdRow(cmd) {
     handle.className = 'cmd-drag-handle'; handle.textContent = '≡'; handle.title = '拖拽排序';
     tdDrag.appendChild(handle);
 
-    const tdSel = document.createElement('td'); tdSel.className = 'sel';
+    const tdSel = document.createElement('td');
+    tdSel.className = 'sel';
+
     const chk = document.createElement('input');
-    chk.type = 'checkbox'; chk.className = 'rowSel'; chk.dataset.id = cmd.id;
+    chk.type = 'checkbox';
+    chk.className = 'rowSel';
+    chk.dataset.id = cmd.id;
+
     tdSel.appendChild(chk);
     chk.addEventListener('change', updateDeleteSelectedBtn);
+
+    tdSel.addEventListener('click', (e) => {
+        if (e.target === chk) return;
+        chk.checked = !chk.checked;
+        chk.dispatchEvent(new Event('change', { bubbles: false }));
+    });
 
     const tdName = document.createElement('td');
     const inputName = document.createElement('input');
@@ -2636,31 +2906,244 @@ function makeCmdRow(cmd) {
     return tr;
 }
 
+function renderCmdTableForCurrentGroup() {
+    if (!cmdTableBody) return;
+    cmdTableBody.innerHTML = '';
+
+    const active = getActiveGroup();
+    state.commands
+        .filter(cmd => (cmd.group || '默认分组') === active)
+        .forEach(cmd => cmdTableBody.appendChild(makeCmdRow(cmd)));
+
+    if (cmdSelectAll) cmdSelectAll.checked = false;
+    updateDeleteSelectedBtn();
+}
+
 cmdAdd.addEventListener('click', () => {
-    const newCmd = { id: cryptoRandomId(), name: '新命令', data: '', mode: 'text' };
+    const g = getActiveGroup();
+    const newCmd = { id: cryptoRandomId(), name: '新命令', data: '', mode: 'text', group: g };
     state.commands.push(newCmd);
     cmdTableBody.appendChild(makeCmdRow(newCmd));
 });
 
 cmdSave.addEventListener('click', () => {
     saveCommands();
+    saveCmdGroupsMeta(state.cmdGroupsMeta);
     dlgCmdEdit.close();
     renderCmdGrid();
     forceUnlockUI({ closeDialogs: false, refocusInput: true });
     commandsSnapshot = JSON.parse(JSON.stringify(state.commands));
+    cmdGroupsMetaSnapshot = JSON.parse(JSON.stringify(state.cmdGroupsMeta));
 });
 
+cmdGroupSelect?.addEventListener('change', () => {
+    const val = cmdGroupSelect.value;
+    const meta = state.cmdGroupsMeta;
+    if (!meta || !Array.isArray(meta.groups) || !meta.groups.includes(val)) return;
 
+    meta.active = val;
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+
+    if (cmdGroupShow) {
+        const visible = Array.isArray(meta.visible) ? meta.visible : meta.groups;
+        cmdGroupShow.checked = !!visible.includes(val);
+    }
+
+    renderCmdTableForCurrentGroup();
+    renderCmdGrid();
+});
+
+cmdGroupShow?.addEventListener('change', () => {
+    const meta = state.cmdGroupsMeta || { groups: ['默认分组'], active: '默认分组', visible: [] };
+    if (!Array.isArray(meta.groups)) meta.groups = ['默认分组'];
+    if (!Array.isArray(meta.visible)) meta.visible = [...meta.groups];
+
+    const g = getActiveGroup();
+    const set = new Set(meta.visible);
+
+    if (cmdGroupShow.checked) set.add(g);
+    else set.delete(g);
+
+    meta.visible = Array.from(set).filter(x => meta.groups.includes(x));
+
+    if (!meta.visible.length) {
+        meta.visible = [g];
+        cmdGroupShow.checked = true;
+    }
+
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+    renderCmdGrid();
+});
+
+cmdGroupNew?.addEventListener('click', async () => {
+    let name = await uiPrompt('输入新分组名称', {
+        title: '新建分组',
+        okText: '确定',
+        cancelText: '取消',
+        defaultValue: ''
+    });
+    name = (name || '').trim();
+    if (!name) return;
+
+    const meta = state.cmdGroupsMeta || { groups: [], active: '' };
+    if (!Array.isArray(meta.groups)) meta.groups = [];
+    if (meta.groups.includes(name)) {
+        uiAlert('该分组已存在');
+        return;
+    }
+    meta.groups.push(name);
+    meta.active = name;
+    if (!Array.isArray(meta.visible)) meta.visible = [];
+    if (!meta.visible.includes(name)) meta.visible.push(name);
+
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+
+    refreshCmdGroupSelect();
+    renderCmdTableForCurrentGroup();
+    renderCmdGrid();
+});
+
+// 重命名分组
+cmdGroupRename?.addEventListener('click', async () => {
+    const meta = state.cmdGroupsMeta;
+    if (!meta || !Array.isArray(meta.groups) || !meta.groups.length) return;
+    const current = getActiveGroup();
+
+    let name = await uiPrompt('输入新的分组名称', {
+        title: '重命名分组',
+        okText: '确定',
+        cancelText: '取消',
+        defaultValue: current
+    });
+    name = (name || '').trim();
+    if (!name || name === current) return;
+
+    if (meta.groups.includes(name)) {
+        uiAlert('已存在同名分组');
+        return;
+    }
+
+    meta.groups = meta.groups.map(g => g === current ? name : g);
+    meta.active = name;
+
+    state.commands.forEach(cmd => {
+        if ((cmd.group || '默认分组') === current) cmd.group = name;
+    });
+
+    if (!Array.isArray(meta.visible)) meta.visible = [...meta.groups];
+    else {
+        meta.visible = meta.visible
+            .map(g => g === current ? name : g)
+            .filter(g => meta.groups.includes(g));
+        if (!meta.visible.length) meta.visible = [...meta.groups];
+    }
+
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+
+    refreshCmdGroupSelect();
+    renderCmdTableForCurrentGroup();
+    renderCmdGrid();
+});
+
+cmdGroupDelete?.addEventListener('click', async () => {
+    const meta = state.cmdGroupsMeta;
+    if (!meta || !Array.isArray(meta.groups) || !meta.groups.length) return;
+    const current = getActiveGroup();
+
+    if (meta.groups.length <= 1) {
+        uiAlert('至少需要保留一个分组');
+        return;
+    }
+
+    let target = '默认分组';
+    if (!meta.groups.includes('默认分组') || current === '默认分组') {
+        target = meta.groups.find(g => g !== current) || current;
+    }
+
+    const ok = await uiConfirm(`确定删除分组「${current}」？\n其中的命令将移动到「${target}」。`, {
+        danger: true,
+        okText: '删除',
+        cancelText: '取消'
+    });
+    if (!ok) { safeRefocusInput(); return; }
+
+    if (!meta.groups.includes(target)) meta.groups.push(target);
+
+    state.commands.forEach(cmd => {
+        if ((cmd.group || '默认分组') === current) cmd.group = target;
+    });
+
+    meta.groups = meta.groups.filter(g => g !== current);
+    if (!meta.groups.length) meta.groups = [target];
+    meta.active = target;
+
+    if (!Array.isArray(meta.visible)) meta.visible = [...meta.groups];
+    else {
+        meta.visible = meta.visible.filter(g => g !== current);
+        if (!meta.visible.includes(target)) meta.visible.push(target);
+        meta.visible = meta.visible.filter(g => meta.groups.includes(g));
+        if (!meta.visible.length) meta.visible = [...meta.groups];
+    }
+
+    state.cmdGroupsMeta = meta;
+    saveCmdGroupsMeta(meta);
+
+    refreshCmdGroupSelect();
+    renderCmdTableForCurrentGroup();
+    renderCmdGrid();
+    safeRefocusInput();
+});
 
 function saveCommands() { window.api.commands.save(state.commands); }
 async function loadCommands() {
     const list = await window.api.commands.load();
+
+    const currentGroups = state.cmdGroupsMeta?.groups || [];
+    const fallbackGroup = currentGroups.length > 0 ? currentGroups[0] : '默认分组';
+
     state.commands = (list || []).map(c => ({
         id: c.id || cryptoRandomId(),
         name: c.name || '',
         data: c.data || '',
-        mode: c.mode || 'text'
+        mode: c.mode || 'text',
+        group: c.group || c.page || fallbackGroup
     }));
+    syncCmdGroupsMetaWithCommands();
+}
+
+function refreshCmdGroupSelect() {
+    if (!cmdGroupSelect) return;
+    const meta = state.cmdGroupsMeta || { groups: ['默认分组'], active: '默认分组', visible: null };
+    const groups = Array.isArray(meta.groups) && meta.groups.length ? meta.groups : ['默认分组'];
+
+    cmdGroupSelect.innerHTML = '';
+    groups.forEach(g => {
+        const opt = document.createElement('option');
+        opt.value = g;
+        opt.textContent = g;
+        cmdGroupSelect.appendChild(opt);
+    });
+
+    let active = getActiveGroup();
+    if (!groups.includes(active)) {
+        active = groups[0];
+        meta.active = active;
+        state.cmdGroupsMeta = meta;
+        saveCmdGroupsMeta(meta);
+    }
+    cmdGroupSelect.value = active;
+
+    if (cmdGroupShow) {
+        let visible = Array.isArray(meta.visible)
+            ? meta.visible.filter(g => groups.includes(g))
+            : [];
+        if (!visible.length) visible = [...groups];
+        cmdGroupShow.checked = visible.includes(active);
+    }
 }
 
 function cryptoRandomId() {
@@ -2735,9 +3218,11 @@ function clampAllPanesToWorkspace() {
 (async function init() {
     if (settings.fullscreen) window.api?.window?.setFullscreen(true);
     updateTitlebarSafeArea();
+    if (sendRowMain) sendRowMain.style.display = 'none';
     await refreshPortsCombo();
     const saved = await window.api.config.load();
     state.savedConfig = Array.isArray(saved) ? saved : [];
+    state.listOrder = state.savedConfig.map(p => p.id || p.path);
     state.savedConfig.forEach(p => {
         const id = p.id || p.path;
         const name = p.name || id || '';
@@ -2745,6 +3230,7 @@ function clampAllPanesToWorkspace() {
     });
     await loadCommands();
     document.getElementById('echoSend').checked = true;
+    refreshCmdGroupSelect();
     renderCmdGrid();
     window.addEventListener('resize', () => { renderCmdGrid(); clampAllPanesToWorkspace(); });
 
@@ -2788,9 +3274,13 @@ function clampAllPanesToWorkspace() {
         endCmdDrag(true);
         try { dlgCmdEdit.close(); } catch { }
         cmdSelectAll.checked = false;
+
         commandsSnapshot = JSON.parse(JSON.stringify(state.commands));
-        cmdTableBody.innerHTML = '';
-        state.commands.forEach((cmd) => cmdTableBody.appendChild(makeCmdRow(cmd)));
+        cmdGroupsMetaSnapshot = JSON.parse(JSON.stringify(state.cmdGroupsMeta));
+
+        refreshCmdGroupSelect();
+        renderCmdTableForCurrentGroup();
+
         dlgCmdEdit.showModal();
         updateDeleteSelectedBtn();
     }
@@ -2798,18 +3288,34 @@ function clampAllPanesToWorkspace() {
 
     async function attemptCloseCmdEditor(reason = 'cancel') {
         const dlg = document.getElementById('dlgCmdEdit');
-        const changed = JSON.stringify(state.commands) !== JSON.stringify(commandsSnapshot);
+        const changedCommands = JSON.stringify(state.commands) !== JSON.stringify(commandsSnapshot || []);
+        const changedGroups = JSON.stringify(state.cmdGroupsMeta || {}) !== JSON.stringify(cmdGroupsMetaSnapshot || {});
+        const changed = changedCommands || changedGroups;
+
         if (changed) {
-            const giveup = await uiConfirm('检测到未保存的修改。是否放弃这些改动并返回？', { okText: '放弃修改', cancelText: '继续编辑' });
+            const giveup = await uiConfirm('检测到未保存的修改。是否放弃这些改动并返回？', {
+                okText: '放弃修改',
+                cancelText: '继续编辑'
+            });
             if (!giveup) return false;
-            state.commands = JSON.parse(JSON.stringify(commandsSnapshot));
+
+            if (commandsSnapshot) {
+                state.commands = JSON.parse(JSON.stringify(commandsSnapshot));
+            }
+            if (cmdGroupsMetaSnapshot) {
+                state.cmdGroupsMeta = JSON.parse(JSON.stringify(cmdGroupsMetaSnapshot));
+            }
+
             saveCommands();
+            saveCmdGroupsMeta(state.cmdGroupsMeta);
+            refreshCmdGroupSelect();
             renderCmdGrid();
         }
         try { dlg.close(); } catch { }
         safeRefocusInput();
         return true;
     }
+
     cmdCancel?.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -2846,30 +3352,137 @@ function clampAllPanesToWorkspace() {
         safeRefocusInput();
     });
 
+    document.getElementById('cmdMoveSel')?.addEventListener('click', async () => {
+        const ids = Array.from(cmdTableBody.querySelectorAll('.rowSel:checked'))
+            .map(ch => ch.dataset.id);
+        if (ids.length === 0) {
+            updateDeleteSelectedBtn();
+            return;
+        }
+
+        const meta = state.cmdGroupsMeta;
+        if (!meta || !Array.isArray(meta.groups) || meta.groups.length <= 1) {
+            uiAlert('当前只有一个分组，没法移动到别的分组');
+            return;
+        }
+
+        const current = getActiveGroup();
+        const candidates = meta.groups.filter(g => g !== current);
+        if (!candidates.length) {
+            uiAlert('没有可用的目标分组');
+            return;
+        }
+
+        const target = await uiSelect('选择要移动到的分组：', {
+            title: '移动选中的命令',
+            okText: '移动',
+            cancelText: '取消',
+            items: candidates
+        });
+        if (!target) { safeRefocusInput(); return; }
+        if (!candidates.includes(target)) {
+            uiAlert('无效的分组');
+            safeRefocusInput();
+            return;
+        }
+
+        state.commands.forEach(cmd => {
+            if (ids.includes(cmd.id)) cmd.group = target;
+        });
+
+        renderCmdTableForCurrentGroup();
+        renderCmdGrid();
+
+        if (cmdSelectAll) cmdSelectAll.checked = false;
+        updateDeleteSelectedBtn();
+        safeRefocusInput();
+    });
+
+    document.getElementById('cmdCopySel')?.addEventListener('click', async () => {
+        const ids = Array.from(cmdTableBody.querySelectorAll('.rowSel:checked'))
+            .map(ch => ch.dataset.id);
+        if (ids.length === 0) {
+            updateDeleteSelectedBtn();
+            return;
+        }
+
+        const meta = state.cmdGroupsMeta;
+        if (!meta || !Array.isArray(meta.groups)) {
+            uiAlert('分组数据异常');
+            return;
+        }
+
+        const current = getActiveGroup();
+
+        const candidates = meta.groups.filter(g => g !== current);
+
+        if (candidates.length === 0) {
+            uiAlert('没有其他分组可供复制（请先新建分组）');
+            return;
+        }
+
+        const target = await uiSelect('选择要复制到的目标分组：', {
+            title: '复制选中的命令',
+            okText: '复制',
+            cancelText: '取消',
+            items: candidates
+        });
+
+        if (!target) { safeRefocusInput(); return; }
+
+        if (!meta.groups.includes(target)) {
+            uiAlert('无效的分组');
+            safeRefocusInput();
+            return;
+        }
+
+        const newCommands = [];
+        state.commands.forEach(cmd => {
+            if (ids.includes(cmd.id)) {
+                const copy = { ...cmd, id: cryptoRandomId(), group: target };
+                newCommands.push(copy);
+            }
+        });
+
+        state.commands.push(...newCommands);
+
+        uiAlert(`已成功复制 ${newCommands.length} 条命令到「${target}」`);
+
+        renderCmdGrid();
+
+        const checkedBoxes = cmdTableBody.querySelectorAll('.rowSel:checked');
+        checkedBoxes.forEach(box => {
+            box.checked = false;
+        });
+
+        if (cmdSelectAll) cmdSelectAll.checked = false;
+
+        updateDeleteSelectedBtn();
+        safeRefocusInput();
+    });
+
     window.addEventListener('focus', () => setTimeout(safeRefocusInput, 0));
     document.addEventListener('visibilitychange', () => {
         if (!document.hidden) setTimeout(safeRefocusInput, 0);
     });
 
     (function injectShareControls() {
-        const row = document.querySelector('#page-serial .row');
-        if (!row) return;
+        const containerRow = document.getElementById('row-share-container');
+        if (!containerRow) return;
 
         const shareGroup = document.createElement('div');
         shareGroup.id = 'shareTcpGroup';
         shareGroup.style.display = 'inline-flex';
         shareGroup.style.alignItems = 'center';
         shareGroup.style.gap = '6px';
-        shareGroup.style.marginLeft = '12px';
 
         shareGroup.innerHTML = `
-      <label style="color:#606266;">共享端口</label>
-      <input id="sharePort" type="number" min="1" max="65535" value="9000" style="width:90px;height:26px">
+      <label style="color:#606266;">共享端口：</label> <input id="sharePort" type="number" min="1" max="65535" value="9000" style="width:90px;height:26px">
       <button id="btnShareTcp">共享为 TCP</button>
       <span id="shareInfo" style="margin-left:6px;color:#409EFF;"></span>
       <button id="btnCopyShare" title="复制地址" style="display:none">复制</button>
     `;
-        row.appendChild(shareGroup);
+        containerRow.appendChild(shareGroup);
 
         const btn = document.getElementById('btnShareTcp');
         const portInput = document.getElementById('sharePort');
@@ -2880,14 +3493,17 @@ function clampAllPanesToWorkspace() {
             const id = state.activeId;
             const pane = id ? state.panes.get(id) : null;
             const isSerial = !!pane && pane.type !== 'tcp';
+
+            containerRow.style.display = isSerial ? 'flex' : 'none';
             shareGroup.style.display = isSerial ? 'inline-flex' : 'none';
+
             info.textContent = '';
             btnCopy.style.display = 'none';
             if (!isSerial) return;
 
             const st = await window.api.tcpShare.status(id);
             if (st.active) {
-                btn.textContent = '停止共享为 TCP';
+                btn.textContent = '停止共享'; //稍微缩短文案
                 const first = (st.addrs && st.addrs[0]) || '';
                 info.textContent = first ? `已共享：${first}` : `已共享：端口 ${st.port}`;
                 btnCopy.style.display = first ? '' : 'none';
@@ -2928,9 +3544,21 @@ function clampAllPanesToWorkspace() {
         window.api.serial.onEvent((evt) => {
             if (evt.id === state.activeId) refreshShareUI();
         });
-
         setTimeout(refreshShareUI, 300);
     })();
+
+    try {
+        const ver = await window.api.app.getVersion();
+        const verEl = document.getElementById('appVersion');
+        if (verEl) verEl.textContent = ver;
+    } catch (e) { console.error('获取版本失败', e); }
+
+    const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+    if (btnCheckUpdate) {
+        btnCheckUpdate.addEventListener('click', () => {
+            window.api.app.checkUpdate();
+        });
+    }
 
     updateDeleteSelectedBtn();
 

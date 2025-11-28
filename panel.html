@@ -56,6 +56,29 @@
       <button id="btnDock">收回主窗体</button>
     </div>
     <div id="display" class="pop-body"></div>
+    <div class="pop-send-row">
+      <input id="popInputData" type="text" placeholder="输入要发送的数据…" />
+      <button id="popBtnSend">发送</button>
+
+      <label>
+        结尾：
+        <select id="popAppend">
+          <option value="CRLF">CRLF</option>
+          <option value="none">无结尾</option>
+          <option value="CR">CR</option>
+          <option value="LF">LF</option>
+        </select>
+      </label>
+
+      <label>
+        <input type="checkbox" id="popHexMode" /> HEX
+      </label>
+
+      <label>
+        <input type="checkbox" id="popEchoSend" /> 发送回显
+      </label>
+    </div>
+
   </div>
   <script src="./panel.js"></script>
 </body>

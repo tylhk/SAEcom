@@ -571,6 +571,8 @@ input[type="number"],
   box-shadow: var(--el-shadow-md);
   overflow: hidden;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .pane .title {
@@ -610,7 +612,8 @@ input[type="number"],
 }
 
 .pane .body {
-  height: calc(100% - 40px);
+  flex: 1 1 auto;
+  height: auto;
   overflow: auto;
   font-family: ui-monospace, Menlo, Consolas, monospace;
   padding: 10px;
@@ -1592,6 +1595,16 @@ dialog:not([open]) {
   vertical-align: middle;
 }
 
+.cmd-table th:last-child,
+.cmd-table td:last-child {
+  text-align: center;
+}
+
+.cmd-table td:last-child button {
+  display: inline-flex;
+  justify-content: center;
+}
+
 .cmd-drag-handle {
   display: inline-block;
   width: 16px;
@@ -1746,6 +1759,34 @@ tr.anim-up {
   color: #1a1a1a;
 }
 
+#cmdMoveSel, #cmdCopySel {
+  min-width: 84px;
+}
+
+#cmdMoveSel[disabled], #cmdCopySel[disabled] {
+  opacity: .5;
+  cursor: not-allowed;
+  background: var(--el-bg-surface);
+  color: var(--el-text-color-secondary);
+  border: 1px solid var(--el-border-color);
+}
+
+#cmdMoveSel.active, #cmdCopySel.active {
+  background: #fff7df;
+  border-color: #f3c97a;
+  color: #a86e00;
+}
+
+#cmdMoveSel.active:hover, #cmdCopySel.active:hover {
+  background: #ffefc7;
+}
+
+.theme-dark #cmdMoveSel.active, .theme-dark #cmdCopySel.active {
+  background: #4b3b17;
+  border-color: #e6a23c;
+  color: #ffd78a;
+}
+
 .cmd-cell-drag {
   cursor: grab;
 }
@@ -1809,6 +1850,20 @@ body.cmd-dragging * {
   width: calc(100% - 32px);
   margin: 6px 16px 0;
   padding: 8px 10px;
+  border: 1px solid var(--el-border-color, #e5e7eb);
+  border-radius: 8px;
+  outline: none;
+  background: var(--el-bg-surface, #fff);
+  color: inherit;
+}
+
+.sys-modal .prompt-select {
+  width: calc(100% - 32px);
+  max-width: 100%;
+  box-sizing: border-box;
+  height: 32px;
+  margin: 6px 16px 0;
+  padding: 6px 10px;
   border: 1px solid var(--el-border-color, #e5e7eb);
   border-radius: 8px;
   outline: none;
@@ -2007,4 +2062,107 @@ dialog.sys-modal::backdrop {
   border-radius: 6px;
   background: repeating-linear-gradient(45deg, rgba(64,158,255,.08) 0, rgba(64,158,255,.08) 6px, transparent 6px, transparent 12px);
   margin: 0 0 1px 0;
+}
+
+#dlgCmdEdit .cmd-group-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+#dlgCmdEdit .cmd-group-bar label {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
+}
+
+#cmdGroupSelect {
+  min-width: 160px;
+}
+
+#cmdGroupNew,
+#cmdGroupRename,
+#cmdGroupDelete {
+  height: 26px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+#dlgCmdEdit .cmd-group-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px 0;
+}
+
+#dlgCmdEdit .cmd-group-bar .cmd-group-show-toggle {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+#dlgCmdEdit .cmd-group-bar .cmd-group-show-toggle label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+#cmdGroupShow {
+  width: 14px;
+  height: 14px;
+}
+
+.pane .pane-send-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-top: 1px solid var(--el-border-color);
+  background: var(--el-bg-surface);
+}
+
+.pane .pane-send-row input[type="text"] {
+  flex: 1 1 auto;
+}
+
+.pop-container {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+.pop-body {
+  flex: 1;
+  overflow: auto;
+  padding: 8px;
+  font-family: monospace;
+  white-space: pre-wrap;
+}
+
+.pop-send-row {
+  padding: 4px 8px;
+  border-top: 1px solid #ddd;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.row.split-line {
+    border-top: 1px solid #dcdfe6;
+    padding-top: 7px !important;
+    margin-top: 7px !important;
+}
+
+.theme-dark .row.split-line {
+    border-top-color: #363b45;
+}
+
+#row-share-container {
+    min-height: 30px;
+}
+
+#shareTcpGroup {
+    margin-left: 0 !important;
+    width: 100%;
 }

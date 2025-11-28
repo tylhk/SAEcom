@@ -5,6 +5,9 @@ const { randomUUID } = require('crypto');
 const path = require('path');
 const fs = require('fs');
 const vm = require('vm');
+const https = require('https');
+const { execFile } = require('child_process');
+const os = require('os');
 
 const runningScripts = new Map();
 const ports = new Map();
@@ -66,7 +69,6 @@ function createMainWindow() {
 }
 
 const net = require('net');
-const os = require('os');
 
 // 串口 → TCP 共享：每个串口面板一个实例
 // key = portId（就是串口 path），value = { server, port, clients:Set<Socket>, onSerialData }
@@ -86,7 +88,7 @@ function isRfc1918(ip) {
   return false;
 }
 
-function looksVirtual(ifname='') {
+function looksVirtual(ifname = '') {
   const n = (ifname || '').toLowerCase();
   // 尽量避开常见虚拟/隧道/抓包适配器
   return /(vmnet|vmware|virtualbox|vbox|hyper[- ]?v|wsl|docker|hamachi|zerotier|bridge|npcap|npf|tap|tun|loopback)/i.test(n);
@@ -160,7 +162,7 @@ ipcMain.handle('tcp:open', async (e, { host, port, options }) => {
     s.once('connect', () => {
       try { entry.win.send('tcp:event', { id, type: 'open' }); } catch { }
       resolveOpen && resolveOpen({ ok: true, id });
-    }); s.on('data', (buf) => { 
+    }); s.on('data', (buf) => {
       try { entry.win.send('tcp:data', { id, base64: Buffer.from(buf).toString('base64'), ts: Date.now() }); } catch { }
     });
     s.on('error', (err) => {
@@ -254,20 +256,20 @@ function startTcpShare(portId, sharePort = 9000) {
   const onSerialData = (buf) => {
     for (const c of clients) {
       if (!c.destroyed) {
-        try { c.write(buf); } catch {}
+        try { c.write(buf); } catch { }
       }
     }
   };
   ent.port.on('data', onSerialData);
 
   srv.on('connection', (sock) => {
-    try { sock.setNoDelay(true); sock.setKeepAlive(true, 60000); } catch {}
+    try { sock.setNoDelay(true); sock.setKeepAlive(true, 60000); } catch { }
     clients.add(sock);
     sock.on('data', (buf) => {
-      try { ent.port.write(buf); } catch {}
+      try { ent.port.write(buf); } catch { }
     });
     sock.on('close', () => clients.delete(sock));
-    sock.on('error', () => { try { sock.destroy(); } catch {} clients.delete(sock); });
+    sock.on('error', () => { try { sock.destroy(); } catch { } clients.delete(sock); });
   });
 
   srv.on('error', (err) => {
@@ -285,13 +287,13 @@ function stopTcpShare(portId) {
   const rec = shares.get(portId);
   if (!rec) return;
   try {
-    for (const c of rec.clients) { try { c.destroy(); } catch {} }
+    for (const c of rec.clients) { try { c.destroy(); } catch { } }
     rec.clients.clear();
     rec.server.close();
-  } catch {}
+  } catch { }
   const ent = ports.get(portId);
   if (ent?.port && rec.onSerialData) {
-    try { ent.port.off('data', rec.onSerialData); } catch {}
+    try { ent.port.off('data', rec.onSerialData); } catch { }
   }
   shares.delete(portId);
 }
@@ -330,13 +332,10 @@ function notifyScriptWatchers(portId, buf) {
   for (const fn of m.values()) try { fn(payload); } catch { }
 }
 
-// ========== IPC ==========
 ipcMain.handle('config:load', () => loadPanelsConfig());
 ipcMain.on('config:save', (_e, p) => savePanelsConfig(p));
 ipcMain.handle('commands:load', () => loadCommandsConfig());
 ipcMain.on('commands:save', (_e, c) => saveCommandsConfig(c));
-
-const { execFile } = require('child_process');
 
 async function listSerialPortsSafe() {
   let base = [];
@@ -413,7 +412,7 @@ ipcMain.handle('serial:open', async (_e, { path: p, options }) => {
       });
       port.on('close', () => {
         sendAll('serial:event', { id, type: 'close' });
-        try { if (shares.has(id)) stopTcpShare(id); } catch {}
+        try { if (shares.has(id)) stopTcpShare(id); } catch { }
         ports.delete(id);
       });
       port.on('error', e => {
@@ -484,6 +483,8 @@ ipcMain.on('theme:set', (_e, { dark }) => {
   BrowserWindow.getAllWindows().forEach(w => w.webContents.send('theme:apply', { dark }));
 });
 
+ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.on('app:checkUpdate', () => checkForUpdates(true));
 
 ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
   const { canceled, filePath } = await dialog.showSaveDialog({ title: '保存面板数据', defaultPath: `${name || 'panel'}.txt`, filters: [{ name: '文本文件', extensions: ['txt'] }] });
@@ -522,4 +523,177 @@ ipcMain.handle('scripts:run', (e, { code, ctx }) => {
 ipcMain.handle('scripts:stop', (_e, { runId }) => { const t = runningScripts.get(runId); if (!t) return { ok: false, error: 'NOT_RUNNING' }; t.aborted = true; removeScriptWatcher(runId); return { ok: true }; });
 
 app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
+setTimeout(checkForUpdates, 3000);
 app.on('window-all-closed', () => { ports.forEach(({ port }) => { try { port.close(); } catch { } }); if (process.platform !== 'darwin') app.quit(); });
+
+// 自动检测更新
+const UPDATE_URL = 'https://filebox.satone1008.cn/';
+const FILE_PREFIX = '串口助手-';
+const FILE_SUFFIX = '-win-x64.exe';
+
+function versionCompare(v1, v2) {
+  const p1 = v1.split('.').map(Number);
+  const p2 = v2.split('.').map(Number);
+  for (let i = 0; i < Math.max(p1.length, p2.length); i++) {
+    const n1 = p1[i] || 0;
+    const n2 = p2[i] || 0;
+    if (n1 > n2) return 1;
+    if (n1 < n2) return -1;
+  }
+  return 0;
+}
+
+function checkForUpdates(isManual = false) {
+  console.log('[Updater] Checking for updates...');
+  
+  const req = https.get(UPDATE_URL, (res) => {
+    let data = '';
+    res.on('data', (chunk) => data += chunk);
+    res.on('end', () => {
+      const verRegex = new RegExp(escapeRegExp(FILE_PREFIX) + '(\\d+\\.\\d+\\.\\d+)' + escapeRegExp(FILE_SUFFIX));
+      
+      const linkRegex = /href\s*=\s*["']([^"']+)["']/gi;
+      
+      let match;
+      let latestVer = '0.0.0';
+      let latestDownloadUrl = '';
+
+      while ((match = linkRegex.exec(data)) !== null) {
+        let href = match[1];
+        
+        href = href.replace(/&amp;/g, '&');
+
+        let decodedHref = '';
+        try { 
+            decodedHref = decodeURIComponent(href); 
+        } catch (e) { 
+            continue;
+        }
+
+        const fileMatch = decodedHref.match(verRegex);
+        if (fileMatch) {
+          const foundVer = fileMatch[1];
+          
+          if (versionCompare(foundVer, latestVer) > 0) {
+            latestVer = foundVer;
+            try {
+                latestDownloadUrl = new URL(href, UPDATE_URL).href;
+            } catch (e) {
+                console.error('[Updater] Invalid URL found:', href);
+            }
+          }
+        }
+      }
+
+      const currentVer = app.getVersion();
+      console.log(`[Updater] Current: ${currentVer}, Remote Best: ${latestVer}`);
+
+      if (latestVer === '0.0.0' || !latestDownloadUrl) {
+        if (isManual) {
+          dialog.showMessageBox(mainWindow, { type: 'info', title: '检查更新', message: '未检测到可用更新信息。', buttons: ['确定'] });
+        }
+        return;
+      }
+
+      if (versionCompare(latestVer, currentVer) !== 0) {
+        const actionText = versionCompare(latestVer, currentVer) > 0 ? '升级' : '变更';
+        dialog.showMessageBox(mainWindow, {
+          type: 'info',
+          title: '发现新版本',
+          message: `检测到服务器版本 (${latestVer}) 与当前版本 (${currentVer}) 不一致。\n是否下载并安装？`,
+          buttons: [`立即${actionText}`, '忽略'],
+          defaultId: 0,
+          cancelId: 1
+        }).then(({ response }) => {
+          if (response === 0) {
+            downloadAndInstall(latestDownloadUrl);
+          }
+        });
+      } else {
+        if (isManual) {
+          dialog.showMessageBox(mainWindow, {
+            type: 'info',
+            title: '检查更新',
+            message: `当前版本 (${currentVer}) 已是最新。`,
+            buttons: ['确定']
+          });
+        }
+      }
+    });
+  });
+
+  req.on('error', (e) => {
+    console.error('[Updater] Check failed:', e.message);
+    if (isManual) {
+      dialog.showErrorBox('检查失败', '无法连接到更新服务器：' + e.message);
+    }
+  });
+}
+
+function downloadAndInstall(fileUrl) {
+  const savePath = path.join(os.tmpdir(), `update-${Date.now()}.exe`);
+  
+  const encodedUrl = new URL(fileUrl).href;
+
+  if (mainWindow) mainWindow.setProgressBar(0.1);
+
+  console.log(`[Updater] Downloading from: ${encodedUrl}`);
+
+  const file = fs.createWriteStream(savePath);
+  
+  const request = https.get(encodedUrl, (response) => {
+    if (response.statusCode === 301 || response.statusCode === 302) {
+      file.close();
+      fs.unlink(savePath, () => {});
+      if (response.headers.location) {
+        console.log(`[Updater] Following redirect to: ${response.headers.location}`);
+        downloadAndInstall(response.headers.location);
+      } else {
+        dialog.showErrorBox('更新失败', '服务器重定向但未提供新地址。');
+      }
+      return;
+    }
+
+    if (response.statusCode !== 200) {
+      file.close();
+      fs.unlink(savePath, () => {});
+      dialog.showErrorBox('更新失败', `下载失败，服务器返回状态码: ${response.statusCode}`);
+      if (mainWindow) mainWindow.setProgressBar(-1);
+      return;
+    }
+
+    response.pipe(file);
+
+    file.on('finish', () => {
+      file.close(() => {
+        if (mainWindow) mainWindow.setProgressBar(-1);
+
+        dialog.showMessageBox(mainWindow, {
+          type: 'question',
+          title: '下载完成',
+          message: '更新包下载完毕，程序即将关闭并开始安装。',
+          buttons: ['确定']
+        }).then(() => {
+          shell.openPath(savePath).then((err) => {
+             if (err) {
+                 dialog.showErrorBox('启动安装失败', '无法打开安装文件：' + err);
+             } else {
+                 setTimeout(() => app.quit(), 500); 
+             }
+          });
+        });
+      });
+    });
+  });
+
+  request.on('error', (err) => {
+    fs.unlink(savePath, () => { });
+    if (mainWindow) mainWindow.setProgressBar(-1);
+    dialog.showErrorBox('更新失败', '网络请求出错：' + err.message);
+  });
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
