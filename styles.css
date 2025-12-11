@@ -770,6 +770,21 @@ input[type="number"],
   white-space: nowrap;
 }
 
+.cmd-card .preview-edit {
+  flex: 1;
+  width: 0;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid var(--el-color-primary);
+  border-radius: var(--el-radius-sm);
+  padding: 0 8px;
+  background: var(--el-bg-surface);
+  color: var(--el-text-color-primary);
+  font-size: 13px;
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(64, 158, 255, .1);
+}
+
 .cmd-card {
   display: flex;
   align-items: center;

@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>更新日志</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #fff;
+        }
+        @media (prefers-color-scheme: dark) {
+            body { background: #1e1e1e; color: #ddd; }
+            h1, h2, h3 { color: #fff; }
+            code { background: #333; }
+            hr { border-color: #444; }
+        }
+        h1, h2, h3 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
+        h1 { font-size: 2em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+        h2 { font-size: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
+        ul, ol { padding-left: 2em; }
+        code {
+            padding: .2em .4em;
+            margin: 0;
+            font-size: 85%;
+            background-color: rgba(27,31,35,.05);
+            border-radius: 3px;
+            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+        }
+        blockquote {
+            color: #6a737d;
+            border-left: .25em solid #dfe2e5;
+            padding: 0 1em;
+            margin: 0;
+        }
+        hr { height: .25em; padding: 0; margin: 24px 0; background-color: #e1e4e8; border: 0; }
+    </style>
+</head>
+<body>
+    <div id="content">加载中...</div>
+
+    <script>
+        function parseMarkdown(md) {
+            let html = md
+                .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+                .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
+                .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
+                .replace(/\*\*(.*)\*\*/gim, '<b>$1</b>')
+                .replace(/\`(.*)\`/gim, '<code>$1</code>')
+                .replace(/^- (.*$)/gim, '<li>$1</li>')
+                .replace(/((<li>.*<\/li>\s*)+)/gim, '<ul>$1</ul>') // 包装列表
+                .replace(/\n/gim, '<br>');
+            return html;
+        }
+
+        window.api.changelog.onLoad((text) => {
+            document.getElementById('content').innerHTML = parseMarkdown(text);
+        });
+
+        window.api.changelog.request();
+    </script>
+</body>
+</html>

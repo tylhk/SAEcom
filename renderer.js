@@ -31,6 +31,8 @@ const tcpFields = $('#tcpFields');
 const serialFields = $('#serialFields');
 const tcpHost = $('#tcpHost');
 const tcpPort = $('#tcpPort');
+const btnCheckUpdate = document.getElementById('btnCheckUpdate');
+const btnChangelog = document.getElementById('btnChangelog');
 let commandsSnapshot = null;
 let cmdGroupsMetaSnapshot = null;
 let CMD_DND = {
@@ -1304,7 +1306,18 @@ function appendNodeTail(pane, node) {
     if (pane.autoScroll) body.scrollTop = body.scrollHeight;
 }
 
-/* ===== 脚本 ===== */
+if (btnCheckUpdate) {
+    btnCheckUpdate.addEventListener('click', () => {
+        window.api.app.checkUpdate();
+    });
+}
+
+if (btnChangelog) {
+    btnChangelog.addEventListener('click', () => {
+        window.api.changelog.open();
+    });
+}
+
 async function refreshScriptList() {
     const dir = await window.api.scripts.dir();
     scriptDirHint.textContent = dir || '';
@@ -1473,7 +1486,7 @@ function echoIfEnabled(id, text) {
     if (!pane) return;
 
     const ts = nowTs();
-    const addText = `[${ts}]\n${text}\n`;
+    const addText = `[${ts}] ${text}\n`;
 
     pane.textBuffer += addText;
     pane.hexBuffer += addText;
@@ -3058,7 +3071,6 @@ cmdGroupNew?.addEventListener('click', async () => {
     renderCmdGrid();
 });
 
-// 重命名分组
 cmdGroupRename?.addEventListener('click', async () => {
     const meta = state.cmdGroupsMeta;
     if (!meta || !Array.isArray(meta.groups) || !meta.groups.length) return;
@@ -3266,7 +3278,6 @@ function clampAllPanesToWorkspace() {
     window.api.config.save(exportPanelsConfig());
 }
 
-// ===== 启动初始化 =====
 (async function init() {
     if (settings.fullscreen) window.api?.window?.setFullscreen(true);
     updateTitlebarSafeArea();
@@ -3555,7 +3566,7 @@ function clampAllPanesToWorkspace() {
 
             const st = await window.api.tcpShare.status(id);
             if (st.active) {
-                btn.textContent = '停止共享'; //稍微缩短文案
+                btn.textContent = '停止共享';
                 const first = (st.addrs && st.addrs[0]) || '';
                 info.textContent = first ? `已共享：${first}` : `已共享：端口 ${st.port}`;
                 btnCopy.style.display = first ? '' : 'none';

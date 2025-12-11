@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld('api', {
     getVersion: () => ipcRenderer.invoke('app:version'),
     checkUpdate: () => ipcRenderer.send('app:checkUpdate')
   },
+  changelog: {
+    open: () => ipcRenderer.send('changelog:open'),
+    request: () => ipcRenderer.send('changelog:request'),
+    onLoad: (cb) => ipcRenderer.on('changelog:content', (_e, text) => cb(text))
+  },
   theme: {
     set: (dark) => ipcRenderer.send('theme:set', { dark }),
     onApply: (cb) => ipcRenderer.on('theme:apply', (_e, payload) => cb(payload))

@@ -1,4 +1,4 @@
-// ========== 主进程入口 ==========
+const { spawn } = require('child_process');
 const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { SerialPort } = require('serialport');
 const { randomUUID } = require('crypto');
@@ -491,6 +491,29 @@ ipcMain.on('theme:set', (_e, { dark }) => {
 });
 
 ipcMain.handle('app:version', () => app.getVersion());
+ipcMain.on('changelog:open', () => {
+  const win = new BrowserWindow({
+    width: 800,
+    height: 600,
+    title: '更新日志',
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true
+    }
+  });
+  win.loadFile('changelog.html');
+});
+ipcMain.on('changelog:request', (event) => {
+  const mdPath = path.join(__dirname, 'CHANGELOG.md');
+  fs.readFile(mdPath, 'utf-8', (err, data) => {
+    if (err) {
+      event.reply('changelog:content', '# 加载失败\n无法读取 CHANGELOG.md 文件。');
+    } else {
+      event.reply('changelog:content', data);
+    }
+  });
+});
 ipcMain.on('app:checkUpdate', () => checkForUpdates(true));
 ipcMain.on('panel:request-hide', (_e, { id }) => {
     mainWindow?.webContents.send('panel:hide', { id });
@@ -582,7 +605,6 @@ function checkForUpdates(isManual = false) {
     res.on('data', (chunk) => data += chunk);
     res.on('end', () => {
       const verRegex = new RegExp(escapeRegExp(FILE_PREFIX) + '(\\d+\\.\\d+\\.\\d+)' + escapeRegExp(FILE_SUFFIX));
-      
       const linkRegex = /href\s*=\s*["']([^"']+)["']/gi;
       
       let match;
@@ -591,27 +613,17 @@ function checkForUpdates(isManual = false) {
 
       while ((match = linkRegex.exec(data)) !== null) {
         let href = match[1];
-        
         href = href.replace(/&amp;/g, '&');
-
         let decodedHref = '';
-        try { 
-            decodedHref = decodeURIComponent(href); 
-        } catch (e) { 
-            continue;
-        }
+        try { decodedHref = decodeURIComponent(href); } catch (e) { continue; }
 
         const fileMatch = decodedHref.match(verRegex);
         if (fileMatch) {
           const foundVer = fileMatch[1];
-          
           if (versionCompare(foundVer, latestVer) > 0) {
             latestVer = foundVer;
-            try {
-                latestDownloadUrl = new URL(href, UPDATE_URL).href;
-            } catch (e) {
-                console.error('[Updater] Invalid URL found:', href);
-            }
+            try { latestDownloadUrl = new URL(href, UPDATE_URL).href; } 
+            catch (e) { console.error('[Updater] Invalid URL:', href); }
           }
         }
       }
@@ -619,56 +631,48 @@ function checkForUpdates(isManual = false) {
       const currentVer = app.getVersion();
       console.log(`[Updater] Current: ${currentVer}, Remote Best: ${latestVer}`);
 
-      if (latestVer === '0.0.0' || !latestDownloadUrl) {
+      if (latestVer === '0.0.0' || !latestDownloadUrl || versionCompare(latestVer, currentVer) <= 0) {
         if (isManual) {
-          dialog.showMessageBox(mainWindow, { type: 'info', title: '检查更新', message: '未检测到可用更新信息。', buttons: ['确定'] });
+          dialog.showMessageBox(mainWindow, { type: 'info', title: '检查更新', message: `当前版本 (${currentVer}) 已是最新。`, buttons: ['确定'] });
         }
         return;
       }
 
-      if (versionCompare(latestVer, currentVer) !== 0) {
+      const saveName = `update-${latestVer}.exe`;
+      const savePath = path.join(os.tmpdir(), saveName);
+
+      if (fs.existsSync(savePath)) {
+        console.log('[Updater] File already exists, skipping download.');
+        promptToInstall(latestVer, savePath);
+      } else {
         const actionText = versionCompare(latestVer, currentVer) > 0 ? '升级' : '变更';
         dialog.showMessageBox(mainWindow, {
           type: 'info',
           title: '发现新版本',
-          message: `检测到服务器版本 (${latestVer}) 与当前版本 (${currentVer}) 不一致。\n是否下载并安装？`,
-          buttons: [`立即${actionText}`, '忽略'],
+          message: `检测到新版本 (${latestVer})。\n是否立即下载更新？`,
+          buttons: [`下载${actionText}`, '稍后'],
           defaultId: 0,
           cancelId: 1
         }).then(({ response }) => {
           if (response === 0) {
-            downloadAndInstall(latestDownloadUrl);
+            downloadUpdate(latestDownloadUrl, savePath, latestVer);
           }
         });
-      } else {
-        if (isManual) {
-          dialog.showMessageBox(mainWindow, {
-            type: 'info',
-            title: '检查更新',
-            message: `当前版本 (${currentVer}) 已是最新。`,
-            buttons: ['确定']
-          });
-        }
       }
     });
   });
 
   req.on('error', (e) => {
     console.error('[Updater] Check failed:', e.message);
-    if (isManual) {
-      dialog.showErrorBox('检查失败', '无法连接到更新服务器：' + e.message);
-    }
+    if (isManual) dialog.showErrorBox('检查失败', '无法连接到更新服务器：' + e.message);
   });
 }
 
-function downloadAndInstall(fileUrl) {
-  const savePath = path.join(os.tmpdir(), `update-${Date.now()}.exe`);
-  
-  const encodedUrl = new URL(fileUrl).href;
-
+function downloadUpdate(fileUrl, savePath, version) {
   if (mainWindow) mainWindow.setProgressBar(0.1);
 
-  console.log(`[Updater] Downloading from: ${encodedUrl}`);
+  const encodedUrl = new URL(fileUrl).href;
+  console.log(`[Updater] Downloading to: ${savePath}`);
 
   const file = fs.createWriteStream(savePath);
   
@@ -677,10 +681,9 @@ function downloadAndInstall(fileUrl) {
       file.close();
       fs.unlink(savePath, () => {});
       if (response.headers.location) {
-        console.log(`[Updater] Following redirect to: ${response.headers.location}`);
-        downloadAndInstall(response.headers.location);
+        downloadUpdate(response.headers.location, savePath, version);
       } else {
-        dialog.showErrorBox('更新失败', '服务器重定向但未提供新地址。');
+        dialog.showErrorBox('更新失败', '服务器重定向错误。');
       }
       return;
     }
@@ -688,7 +691,7 @@ function downloadAndInstall(fileUrl) {
     if (response.statusCode !== 200) {
       file.close();
       fs.unlink(savePath, () => {});
-      dialog.showErrorBox('更新失败', `下载失败，服务器返回状态码: ${response.statusCode}`);
+      dialog.showErrorBox('更新失败', `HTTP 状态码: ${response.statusCode}`);
       if (mainWindow) mainWindow.setProgressBar(-1);
       return;
     }
@@ -698,21 +701,7 @@ function downloadAndInstall(fileUrl) {
     file.on('finish', () => {
       file.close(() => {
         if (mainWindow) mainWindow.setProgressBar(-1);
-
-        dialog.showMessageBox(mainWindow, {
-          type: 'question',
-          title: '下载完成',
-          message: '更新包下载完毕，程序即将关闭并开始安装。',
-          buttons: ['确定']
-        }).then(() => {
-          shell.openPath(savePath).then((err) => {
-             if (err) {
-                 dialog.showErrorBox('启动安装失败', '无法打开安装文件：' + err);
-             } else {
-                 setTimeout(() => app.quit(), 500); 
-             }
-          });
-        });
+        promptToInstall(version, savePath);
       });
     });
   });
@@ -720,11 +709,53 @@ function downloadAndInstall(fileUrl) {
   request.on('error', (err) => {
     fs.unlink(savePath, () => { });
     if (mainWindow) mainWindow.setProgressBar(-1);
-    dialog.showErrorBox('更新失败', '网络请求出错：' + err.message);
+    dialog.showErrorBox('更新失败', '网络错误：' + err.message);
   });
+}
+
+function promptToInstall(version, filePath) {
+  dialog.showMessageBox(mainWindow, {
+    type: 'question',
+    title: '准备安装',
+    message: `新版本 ${version} 已准备就绪。\n\n点击【立即安装】将自动退出程序并开始更新。`,
+    buttons: ['立即安装', '稍后安装'],
+    defaultId: 0,
+    cancelId: 1
+  }).then(({ response }) => {
+    if (response === 0) {
+      runInstallerAndQuit(filePath);
+    }
+  });
+}
+
+function runInstallerAndQuit(filePath) {
+  console.log('[Updater] Spawning installer, deleting file on finish, and relaunching...');
+  
+  const targetAppPath = app.getPath('exe');
+  const installCmd = `start /wait "" "${filePath}" /S`;
+  const deleteCmd = `del /f /q "${filePath}"`;
+  const relaunchCmd = `start "" "${targetAppPath}"`;
+  
+  const fullCommand = `${installCmd} & ${deleteCmd} & ${relaunchCmd}`;
+
+  try {
+    const subprocess = spawn('cmd', ['/c', fullCommand], {
+      detached: true,
+      windowsVerbatimArguments: true,
+      stdio: 'ignore'
+    });
+
+    subprocess.unref();
+
+    setTimeout(() => {
+      app.quit(); 
+    }, 500);
+
+  } catch (e) {
+    dialog.showErrorBox('安装启动失败', '无法启动安装程序：' + e.message);
+  }
 }
 
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
-
