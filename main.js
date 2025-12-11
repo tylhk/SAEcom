@@ -470,6 +470,13 @@ ipcMain.handle('file:readHex', (_e, filePath) => {
 });
 ipcMain.on('window:set-fullscreen', (_e, { flag }) => mainWindow?.setFullScreen(!!flag));
 ipcMain.on('window:toggle-fullscreen', () => mainWindow?.setFullScreen(!mainWindow.isFullScreen()));
+ipcMain.on('window:focus', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
 ipcMain.on('theme:set', (_e, { dark }) => {
   if (process.platform === 'win32' && mainWindow?.setTitleBarOverlay) {
     try {
@@ -485,17 +492,41 @@ ipcMain.on('theme:set', (_e, { dark }) => {
 
 ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.on('app:checkUpdate', () => checkForUpdates(true));
-
+ipcMain.on('panel:request-hide', (_e, { id }) => {
+    mainWindow?.webContents.send('panel:hide', { id });
+    const win = BrowserWindow.fromWebContents(_e.sender);
+    win?.close();
+});
 ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
   const { canceled, filePath } = await dialog.showSaveDialog({ title: '保存面板数据', defaultPath: `${name || 'panel'}.txt`, filters: [{ name: '文本文件', extensions: ['txt'] }] });
   if (canceled || !filePath) return { ok: false, canceled: true };
   try { fs.writeFileSync(filePath, content, 'utf-8'); return { ok: true, filePath }; } catch (e) { return { ok: false, error: e.message }; }
 });
-ipcMain.handle('panel:popout', (_e, { id, title, html }) => {
+ipcMain.handle('panel:popout', (_e, { id, title, historyStr, alwaysOnTop, isOpen, viewMode, optionsStr }) => {
   if (!mainWindow) return { ok: false, error: 'MAIN_WINDOW_MISSING' };
-  const win = new BrowserWindow({ width: 600, height: 420, alwaysOnTop: true, frame: false, resizable: true, webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } });
-  win.loadFile('panel.html', { query: { id, title } });
-  win.webContents.once('did-finish-load', () => win.webContents.send('panel:loadContent', { id, html }));
+  
+  const win = new BrowserWindow({ 
+    width: 600, 
+    height: 420, 
+    minWidth: 550,
+    minHeight: 300,
+    alwaysOnTop: alwaysOnTop !== false,
+    frame: false, 
+    resizable: true, 
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } 
+  });
+  
+  win.loadFile('panel.html', { 
+    query: { 
+        id, 
+        title, 
+        isOpen: isOpen ? '1' : '0', 
+        viewMode: viewMode || 'text',
+        opts: optionsStr || '{}' 
+    } 
+  });
+  
+  win.webContents.once('did-finish-load', () => win.webContents.send('panel:loadContent', { id, historyStr }));
   win.on('focus', () => mainWindow?.webContents.send('panel:focus', { id }));
   return { ok: true };
 });

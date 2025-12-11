@@ -425,6 +425,8 @@ let draggingRow = null;
 
 // 设置持久化
 const SETTINGS_KEY = 'appSettings';
+const popTopToggle = document.getElementById('popTopToggle');
+const dockJumpToggle = document.getElementById('dockJumpToggle');
 function loadSettings() {
     try {
         const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -433,8 +435,12 @@ function loadSettings() {
             dark: !!s.dark,
             anim: !!s.anim,
             animExtreme: !!s.animExtreme,
+            popTop: s.popTop !== false,
+            dockJump: s.dockJump !== false
         };
-    } catch { return { mute: false, dark: false, anim: false }; }
+    } catch {
+        return { fullscreen: false, dark: false, anim: false, popTop: true, dockJump: true };
+    }
 }
 function saveSettings(s) {
     localStorage.setItem(SETTINGS_KEY, JSON.stringify(s || settings));
@@ -455,6 +461,8 @@ btnSettings.addEventListener('click', () => {
     if (nightToggle) nightToggle.checked = !!settings.dark;
     if (animToggle) animToggle.checked = !!settings.anim;
     if (animExtremeToggle) animExtremeToggle.checked = !!settings.animExtreme;
+    if (popTopToggle) popTopToggle.checked = !!settings.popTop;
+    if (dockJumpToggle) dockJumpToggle.checked = !!settings.dockJump;
     dlgSettings.showModal();
 });
 settingsClose.addEventListener('click', () => dlgSettings.close());
@@ -476,10 +484,22 @@ if (animExtremeToggle) {
         saveSettings();
     });
 }
+if (popTopToggle) {
+    popTopToggle.addEventListener('change', () => {
+        settings.popTop = popTopToggle.checked;
+        saveSettings();
+    });
+}
+if (dockJumpToggle) {
+    dockJumpToggle.addEventListener('change', () => {
+        settings.dockJump = dockJumpToggle.checked;
+        saveSettings();
+    });
+}
 // ===== 动画 & 粒子效果 =====
 let fxLayer = null;
 let fxEmitActive = 0;
-let fxPile = null; // { left, right, baseY, binW, count, heights: Float32Array }
+let fxPile = null;
 let fxCanvas, fxCtx, fxDPR = 1, fxRunning = false, fxParticles = [];
 let fxLastEmitAt = 0;
 const FX_HOLD_AFTER_EMIT_MS = 3000;
@@ -1467,7 +1487,7 @@ function echoIfEnabled(id, text) {
 }
 
 function setActive(id) {
-    if (state.activeId && state.activeId !== id && inputData) {
+    if (state.activeId && inputData) {
         const prevPane = state.panes.get(state.activeId);
         if (prevPane) {
             prevPane.sendText = inputData.value || '';
@@ -1685,10 +1705,17 @@ function createPane(portPath, name) {
 
     el.querySelector('.btnPop').addEventListener('click', (e) => {
         e.stopPropagation();
-        const html = el.querySelector('.body').innerHTML;
         const pane = state.panes.get(id);
         const popTitle = (pane && pane.note) ? pane.note : name;
-        window.api.panel.popout(id, popTitle, html);
+        window.api.panel.popout(
+            id,
+            popTitle,
+            JSON.stringify(pane.chunks || []),
+            !!settings.popTop,
+            pane.open,
+            pane.viewMode,
+            JSON.stringify(pane.options || {})
+        );
         el.classList.add('hidden');
         if (state.activeId === id) {
             setActive(null);
@@ -2166,7 +2193,15 @@ function refreshPanelList() {
 }
 
 function formatBytes(bytes, mode = 'text') {
-    if (mode === 'hex') return Array.from(bytes).map(b => b.toString(16).padStart(2, '0')).join(' ') + ' ';
+    if (mode === 'hex') {
+        let str = Array.from(bytes).map(b => {
+            const h = b.toString(16).padStart(2, '0').toUpperCase();
+            return (b === 10) ? `${h}\n` : h;
+        }).join(' ').replace(/\n /g, '\n');
+        
+        if (!str.endsWith('\n')) str += ' ';
+        return str;
+    }
     try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); }
     catch { return Array.from(bytes).map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.').join(''); }
 }
@@ -2372,6 +2407,15 @@ window.api.tcp.onEvent((evt) => {
 });
 
 window.api.panel.onFocusFromPopout(({ id }) => { if (state.panes.has(id)) setActive(id); });
+window.api.panel.onHideRequest(({ id }) => {
+    const pane = state.panes.get(id);
+    if (pane) {
+        pane.el.classList.add('hidden');
+        if (state.activeId === id) setActive(null);
+        refreshPanelList();
+        window.api.config.save(exportPanelsConfig());
+    }
+});
 window.api.panel.onDockRequest(({ id, html }) => {
     if (!state.panes.has(id)) {
         const known = state.knownPorts.find(p => p.path === id);
@@ -2399,6 +2443,14 @@ window.api.panel.onDockRequest(({ id, html }) => {
 
     pane.el.classList.remove('hidden');
     setActive(id);
+
+    if (settings.dockJump) {
+        window.api.window.focus();
+        const btnSerial = document.querySelector('#bottomNav button[data-page="serial"]');
+        if (btnSerial && !btnSerial.classList.contains('active')) {
+            btnSerial.click();
+        }
+    }
 });
 
 toggleSidebarBtn.addEventListener('click', () => {

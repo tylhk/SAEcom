@@ -21,7 +21,8 @@ contextBridge.exposeInMainWorld('api', {
   },
   window: {
     setFullscreen: (flag) => ipcRenderer.send('window:set-fullscreen', { flag }),
-    toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen')
+    toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen'),
+    focus: () => ipcRenderer.send('window:focus')
   },
   serial: {
     list: () => ipcRenderer.invoke('serial:list'),
@@ -39,9 +40,12 @@ contextBridge.exposeInMainWorld('api', {
     }
   },
   panel: {
-    popout: (id, title, html) => ipcRenderer.invoke('panel:popout', { id, title, html }),
+    popout: (id, title, historyStr, alwaysOnTop, isOpen, viewMode, optionsStr) => 
+    ipcRenderer.invoke('panel:popout', { id, title, historyStr, alwaysOnTop, isOpen, viewMode, optionsStr }),
     onFocusFromPopout: (cb) => ipcRenderer.on('panel:focus', (_e, payload) => cb(payload)),
     onDockRequest: (cb) => ipcRenderer.on('panel:dock', (_e, payload) => cb(payload)),
+    onHideRequest: (cb) => ipcRenderer.on('panel:hide', (_e, payload) => cb(payload)),
+    requestHide: (id) => ipcRenderer.send('panel:request-hide', { id }),
     onLoadContent: (cb) => ipcRenderer.on('panel:loadContent', (_e, payload) => cb(payload)),
     requestDock: (id, html) => ipcRenderer.send('panel:request-dock', { id, html }),
     getPanelPortIdFromArgs: () => {

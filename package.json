@@ -1,6 +1,6 @@
 {
   "name": "SAEcom",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "基于Electron开发的多面板串口助手/Serial port Assistant based on Electron",
   "main": "main.js",
   "scripts": {

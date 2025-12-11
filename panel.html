@@ -46,14 +46,42 @@
       white-space: pre-wrap;
       overflow: auto;
     }
+
+    .pop-header {
+    padding: 6px 10px;
+    gap: 10px;
+  }
+  .pop-title {
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-weight: bold;
+  }
+  .pop-actions {
+    display: flex;
+    gap: 6px;
+    -webkit-app-region: no-drag;
+  }
+  .btn-tool {
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+    cursor: pointer;
+  }
   </style>
 </head>
 
 <body>
   <div class="pop-container">
     <div class="pop-header">
-      <strong id="title">串口窗口</strong>
-      <button id="btnDock">收回主窗体</button>
+      <div class="pop-title" id="title">串口窗口</div>
+      <div class="pop-actions">
+        <button id="btnToggle" class="btn-tool">打开串口</button>
+        <button id="btnHex" class="btn-tool">HEX显示</button>
+        <button id="btnHide" class="btn-tool">隐藏</button>
+        <button id="btnDock" class="btn-tool">收回</button>
+      </div>
     </div>
     <div id="display" class="pop-body"></div>
     <div class="pop-send-row">
