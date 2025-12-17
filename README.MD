@@ -11,6 +11,7 @@
 
 ## 使用方法
 
+- 下载[个人网站](https://filebox.satone1008.cn/)中对应的串口助手安装包（较快）
 - 下载 [Releases](https://github.com/tylhk/SAEcom/releases) 文件并安装使用
 - Fork[源码](https://github.com/tylhk/SAEcom)自行编译使用
 
