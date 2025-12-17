@@ -36,6 +36,7 @@
       "!**/test{,s}/**",
       "!**/__tests__/**",
       "!**/*.md",
+      "CHANGELOG.md",
       "!node_modules/.cache/**"
     ],
     "asar": true,
