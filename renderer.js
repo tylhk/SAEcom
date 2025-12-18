@@ -336,6 +336,15 @@ function startCmdDrag(e, tr, handle) {
 
     const tbody = document.createElement('tbody');
     const ghost = tr.cloneNode(true);
+
+    const origCells = tr.children;
+    const ghostCells = ghost.children;
+    for (let i = 0; i < origCells.length; i++) {
+        const w = origCells[i].getBoundingClientRect().width;
+        ghostCells[i].style.width = w + 'px';
+        ghostCells[i].style.boxSizing = 'border-box';
+    }
+
     ghost.style.opacity = '1';
     ghost.style.display = '';
     tbody.appendChild(ghost);
@@ -1308,12 +1317,22 @@ function appendNodeTail(pane, node) {
 
 if (btnCheckUpdate) {
     btnCheckUpdate.addEventListener('click', () => {
+        btnCheckUpdate.classList.remove('shining-btn');
+        updateAboutBadge();
         window.api.app.checkUpdate();
     });
 }
 
 if (btnChangelog) {
-    btnChangelog.addEventListener('click', () => {
+    btnChangelog.addEventListener('click', async () => {
+        btnChangelog.classList.remove('shining-btn');
+        updateAboutBadge();
+        
+        try {
+            const ver = await window.api.app.getVersion();
+            localStorage.setItem('lastReadVersion', ver);
+        } catch {}
+
         window.api.changelog.open();
     });
 }
@@ -1530,6 +1549,393 @@ function setActive(id) {
 
         if (sendRowMain) {
             sendRowMain.style.display = 'none';
+        }
+    }
+}
+
+const winterToggle = document.getElementById('winterToggle');
+const WINTER_CONFIG = {
+    enabled: false,
+    gravity: 0.5,
+    powerScale: 0.18,
+    snowInterval: null,
+    gameLoop: null,
+    snowmen: [],
+    projectiles: []
+};
+
+if (winterToggle) {
+    winterToggle.addEventListener('change', () => {
+        settings.winter = winterToggle.checked;
+        saveSettings();
+        applyWinter(settings.winter);
+    });
+}
+
+(function patchSettings() {
+    const s = loadSettings();
+    if (winterToggle) winterToggle.checked = !!s.winter;
+    applyWinter(!!s.winter);
+})();
+
+function applyWinter(enabled) {
+    WINTER_CONFIG.enabled = enabled;
+    const layer = document.getElementById('winterLayer') || createWinterLayer();
+    const rack = document.getElementById('snowballRack') || createSnowballRack();
+    const gameArea = document.getElementById('winterGameArea') || createGameArea();
+
+    layer.style.display = enabled ? 'block' : 'none';
+    
+    rack.style.display = enabled ? '' : 'none'; 
+    
+    gameArea.style.display = enabled ? 'block' : 'none';
+
+    if (enabled) {
+        startSnowFall();
+        startGameLoop();
+    } else {
+        stopSnowFall();
+        stopGameLoop();
+    }
+}
+
+function createWinterLayer() {
+    const div = document.createElement('div');
+    div.id = 'winterLayer';
+    document.body.appendChild(div);
+    return div;
+}
+
+function createGameArea() {
+    const div = document.createElement('div');
+    div.id = 'winterGameArea';
+    const ws = document.getElementById('workspace');
+    if (ws) ws.appendChild(div);
+    return div;
+}
+
+function createSnowballRack() {
+    const rack = document.createElement('div');
+    rack.id = 'snowballRack';
+    for(let i=0; i<5; i++) {
+        const ball = document.createElement('div');
+        ball.className = 'ammo-snowball';
+        ball.dataset.idx = i;
+        ball.addEventListener('mousedown', onAmmoDragStart);
+        rack.appendChild(ball);
+    }
+    
+    const sb = document.getElementById('sidebar');
+    const actions = sb.querySelector('.sidebar-actions');
+    if (actions) {
+        actions.insertAdjacentElement('afterend', rack);
+    } else {
+        sb.appendChild(rack);
+    }
+    return rack;
+}
+
+function startSnowFall() {
+    if (WINTER_CONFIG.snowInterval) return;
+    const layer = document.getElementById('winterLayer');
+    WINTER_CONFIG.snowInterval = setInterval(() => {
+        if (!WINTER_CONFIG.enabled) return;
+        const flake = document.createElement('div');
+        flake.className = 'snowflake';
+        flake.textContent = ['❄', '❅', '❆', '•'][Math.floor(Math.random()*4)];
+        flake.style.left = Math.random() * 100 + 'vw';
+        flake.style.opacity = Math.random();
+        flake.style.fontSize = (10 + Math.random() * 20) + 'px';
+        const duration = 5 + Math.random() * 10;
+        flake.style.animationDuration = duration + 's';
+        
+        layer.appendChild(flake);
+        
+        setTimeout(() => { if(flake.parentNode) flake.remove(); }, duration * 1000);
+    }, 400);
+}
+
+function stopSnowFall() {
+    if (WINTER_CONFIG.snowInterval) clearInterval(WINTER_CONFIG.snowInterval);
+    WINTER_CONFIG.snowInterval = null;
+    const layer = document.getElementById('winterLayer');
+    if (layer) layer.innerHTML = '';
+}
+
+let dragData = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, ballEl: null, lineEl: null };
+
+function onAmmoDragStart(e) {
+    if (!WINTER_CONFIG.enabled) return;
+    const sidebar = document.getElementById('sidebar');
+    if (sidebar.classList.contains('open')) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const rect = e.target.getBoundingClientRect();
+    const centerX = rect.left + rect.width / 2;
+    const centerY = rect.top + rect.height / 2;
+
+    dragData.active = true;
+    dragData.startX = centerX;
+    dragData.startY = centerY;
+    dragData.currentX = centerX;
+    dragData.currentY = centerY;
+    dragData.ballEl = e.target;
+
+    const line = document.createElement('div');
+    line.className = 'aim-line';
+    document.body.appendChild(line);
+    dragData.lineEl = line;
+
+    document.addEventListener('mousemove', onAmmoDragMove);
+    document.addEventListener('mouseup', onAmmoDragEnd);
+}
+
+function onAmmoDragMove(e) {
+    if (!dragData.active) return;
+    dragData.currentX = e.clientX;
+    dragData.currentY = e.clientY;
+    updateAimLine();
+}
+
+function updateAimLine() {
+    if (!dragData.lineEl) return;
+    const dx = dragData.currentX - dragData.startX;
+    const dy = dragData.currentY - dragData.startY;
+    const len = Math.sqrt(dx*dx + dy*dy);
+    const angle = Math.atan2(dy, dx);
+
+    dragData.lineEl.style.left = dragData.startX + 'px';
+    dragData.lineEl.style.top = dragData.startY + 'px';
+    dragData.lineEl.style.width = len + 'px';
+    dragData.lineEl.style.transform = `rotate(${angle}rad)`;
+    
+    dragData.lineEl.style.opacity = Math.min(1, len / 200);
+}
+
+function onAmmoDragEnd(e) {
+    if (!dragData.active) return;
+    document.removeEventListener('mousemove', onAmmoDragMove);
+    document.removeEventListener('mouseup', onAmmoDragEnd);
+    
+    if (dragData.lineEl) dragData.lineEl.remove();
+
+    const dx = dragData.startX - e.clientX;
+    const dy = dragData.startY - e.clientY;
+
+    if (Math.sqrt(dx*dx + dy*dy) > 20) {
+        fireSnowball(dragData.startX, dragData.startY, dx * WINTER_CONFIG.powerScale, dy * WINTER_CONFIG.powerScale);
+    }
+
+    dragData.active = false;
+    dragData.ballEl = null;
+    dragData.lineEl = null;
+}
+
+function fireSnowball(x, y, vx, vy) {
+    const ball = document.createElement('div');
+    ball.className = 'projectile';
+    ball.style.left = x + 'px';
+    ball.style.top = y + 'px';
+    document.body.appendChild(ball);
+
+    WINTER_CONFIG.projectiles.push({
+        el: ball,
+        x: x, y: y,
+        vx: vx, vy: vy,
+        r: 10 // 半径
+    });
+}
+
+function startGameLoop() {
+    if (WINTER_CONFIG.gameLoop) return;
+    
+    let spawnTimer = 0;
+    const sidebarWidth = 260;
+
+    const loop = () => {
+        if (!WINTER_CONFIG.enabled) return;
+
+        const sidebar = document.getElementById('sidebar');
+        const gameArea = document.getElementById('winterGameArea');
+        const isSidebarOpen = sidebar.classList.contains('open');
+        
+        const areaRect = gameArea ? gameArea.getBoundingClientRect() : null;
+        const groundY = areaRect ? areaRect.bottom : (window.innerHeight - 10);
+        
+        if (!isSidebarOpen) {
+            spawnTimer++;
+            if (spawnTimer > 180) { 
+                spawnSnowman();
+                spawnTimer = 0;
+            }
+        }
+
+        for (let i = WINTER_CONFIG.projectiles.length - 1; i >= 0; i--) {
+            const p = WINTER_CONFIG.projectiles[i];
+            
+            p.vy += WINTER_CONFIG.gravity;
+            p.x += p.vx;
+            p.y += p.vy;
+
+            p.el.style.left = p.x + 'px';
+            p.el.style.top = p.y + 'px';
+
+            if (p.y > groundY - 5) {
+                spawnSplat(p.x, groundY);
+                p.el.remove();
+                WINTER_CONFIG.projectiles.splice(i, 1);
+                continue;
+            }
+
+            if (p.x > window.innerWidth || p.x < -50) {
+                p.el.remove();
+                WINTER_CONFIG.projectiles.splice(i, 1);
+                continue;
+            }
+
+            checkCollision(p, i);
+        }
+
+        const areaWidth = gameArea?.clientWidth || window.innerWidth;
+
+        for (let i = WINTER_CONFIG.snowmen.length - 1; i >= 0; i--) {
+            const s = WINTER_CONFIG.snowmen[i];
+            
+            if (typeof s.rot === 'undefined') s.rot = 0;
+            if (typeof s.isFlying === 'undefined') s.isFlying = false;
+
+            if (isSidebarOpen) {
+                if (s.x < sidebarWidth + 20 && !s.isFlying) {
+                    s.isFlying = true;
+                    s.vx = 10 + Math.random() * 5; 
+                    s.vy = -12 - Math.random() * 5;
+                }
+            }
+
+            if (s.isFlying) {
+                s.vy += 0.6;
+                s.x += s.vx;
+                s.y += s.vy;
+                if (typeof s.flyY === 'undefined') s.flyY = 0;
+                s.flyY += s.vy;
+                
+                s.rot += 15;
+
+                if (s.flyY > 200) { 
+                    s.el.remove();
+                    WINTER_CONFIG.snowmen.splice(i, 1);
+                    continue;
+                }
+
+                s.el.style.left = s.x + 'px';
+                s.el.style.transform = `translateY(${s.flyY}px) rotate(${s.rot}deg)`;
+                
+                continue; 
+            }
+
+            const now = Date.now();
+            if (now < s.frozenUntil) {
+                if (!s.el.classList.contains('frozen')) s.el.classList.add('frozen');
+                continue; 
+            } else {
+                s.el.classList.remove('frozen');
+            }
+
+            if (isSidebarOpen) {
+                s.vx = 0;
+                s.el.classList.add('with-arms');
+            } else {
+                s.el.classList.remove('with-arms');
+                if (Math.abs(s.vx) < 0.1) s.vx = (Math.random() * 1.5 + 0.5) * (Math.random() < 0.5 ? 1 : -1);
+                s.el.style.transform = `rotate(0deg)`;
+                s.rot = 0;
+            }
+
+            s.x += s.vx;
+            
+            if (s.x > areaWidth - 40) s.vx = -Math.abs(s.vx);
+            if (s.x < 0) s.vx = Math.abs(s.vx);
+
+            s.el.style.left = s.x + 'px';
+        }
+
+        WINTER_CONFIG.gameLoop = requestAnimationFrame(loop);
+    };
+    WINTER_CONFIG.gameLoop = requestAnimationFrame(loop);
+}
+
+function spawnSplat(x, y) {
+    const splat = document.createElement('div');
+    splat.className = 'snow-splat';
+    splat.style.left = (x - 15) + 'px';
+    splat.style.top = (y - 5) + 'px';
+    
+    const scale = 0.8 + Math.random() * 0.4;
+    splat.style.transform = `scale(${scale})`;
+
+    document.body.appendChild(splat);
+
+    setTimeout(() => {
+        if (splat.parentNode) splat.remove();
+    }, 800);
+}
+
+function stopGameLoop() {
+    if (WINTER_CONFIG.gameLoop) cancelAnimationFrame(WINTER_CONFIG.gameLoop);
+    WINTER_CONFIG.gameLoop = null;
+    WINTER_CONFIG.projectiles.forEach(p => p.el.remove());
+    WINTER_CONFIG.projectiles = [];
+    WINTER_CONFIG.snowmen.forEach(s => s.el.remove());
+    WINTER_CONFIG.snowmen = [];
+}
+
+function spawnSnowman() {
+    const area = document.getElementById('winterGameArea');
+    if (!area) return;
+    
+    if (WINTER_CONFIG.snowmen.length >= 5) return;
+
+    const el = document.createElement('div');
+    el.className = 'snowman';
+    el.innerHTML = `<div class="snowman-head"></div><div class="snowman-scarf"></div><div class="snowman-body"></div>`;
+    
+    const maxW = area.clientWidth - 50;
+    const startX = Math.random() * maxW;
+    el.style.left = startX + 'px';
+    
+    area.appendChild(el);
+
+    WINTER_CONFIG.snowmen.push({
+        el: el,
+        x: startX,
+        vx: (Math.random() * 1.5 + 0.5) * (Math.random() < 0.5 ? 1 : -1),
+        frozenUntil: 0
+    });
+}
+
+function checkCollision(projectile, pIdx) {
+    const pRect = projectile.el.getBoundingClientRect();
+    const px = pRect.left + pRect.width/2;
+    const py = pRect.top + pRect.height/2;
+
+    for (const snowman of WINTER_CONFIG.snowmen) {
+        if (Date.now() < snowman.frozenUntil) continue;
+
+        const sRect = snowman.el.getBoundingClientRect();
+        
+        if (px > sRect.left && px < sRect.right && 
+            py > sRect.top && py < sRect.bottom) {
+            
+            snowman.frozenUntil = Date.now() + 3000;
+            
+            spawnShockwave(px, py);
+            spawnConfetti(px, py);
+
+            projectile.el.remove();
+            WINTER_CONFIG.projectiles.splice(pIdx, 1);
+            return
         }
     }
 }
@@ -3278,6 +3684,16 @@ function clampAllPanesToWorkspace() {
     window.api.config.save(exportPanelsConfig());
 }
 
+function updateAboutBadge() {
+    const btnAbout = document.querySelector('#bottomNav button[data-page="about"]');
+    if (!btnAbout) return;
+    
+    const hasUpdate = (btnCheckUpdate && btnCheckUpdate.classList.contains('shining-btn'));
+    const hasLog = (btnChangelog && btnChangelog.classList.contains('shining-btn'));
+    
+    btnAbout.classList.toggle('has-badge', hasUpdate || hasLog);
+}
+
 (async function init() {
     if (settings.fullscreen) window.api?.window?.setFullscreen(true);
     updateTitlebarSafeArea();
@@ -3291,6 +3707,11 @@ function clampAllPanesToWorkspace() {
         const name = p.name || id || '';
         if (id) createPane(id, name);
     });
+    if (window.api.app.onUpdateAvailable) {
+        window.api.app.onUpdateAvailable(() => {
+            if (btnCheckUpdate) btnCheckUpdate.classList.add('shining-btn');
+        });
+    }
     await loadCommands();
     document.getElementById('echoSend').checked = true;
     refreshCmdGroupSelect();
@@ -3614,14 +4035,15 @@ function clampAllPanesToWorkspace() {
         const ver = await window.api.app.getVersion();
         const verEl = document.getElementById('appVersion');
         if (verEl) verEl.textContent = ver;
+        const lastReadVer = localStorage.getItem('lastReadVersion');
+        if (ver && ver !== lastReadVer) {
+            if (btnChangelog) {
+                btnChangelog.classList.add('shining-btn');
+                btnChangelog.title = "发现新版本，点击查看更新内容";
+                updateAboutBadge();
+            }
+        }
     } catch (e) { console.error('获取版本失败', e); }
-
-    const btnCheckUpdate = document.getElementById('btnCheckUpdate');
-    if (btnCheckUpdate) {
-        btnCheckUpdate.addEventListener('click', () => {
-            window.api.app.checkUpdate();
-        });
-    }
 
     updateDeleteSelectedBtn();
 

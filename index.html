@@ -123,34 +123,60 @@
                 </div>
 
                 <div class="page" id="page-about" style="display:none">
-                    <h3>About</h3>
-                    <p>作者：Satone</p>
-                    <p>
-                        项目主页：
-                        <a href="https://github.com/tylhk/SAEcom"
-                            onclick="window.api.shell.openExternal(this.href); return false;">
-                            https://github.com/tylhk/SAEcom
-                        </a>
-                    </p>
-                    <p>
-                        联系邮箱：
-                        <a href="mailto:satone_shichimiya@outlook.com"
-                            onclick="window.api.shell.openExternal(this.href); return false;">
-                            satone_shichimiya@outlook.com
-                        </a>
-                    </p>
-                    <p>
-                        项目讨论页：
-                        <a href="https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/"
-                            onclick="window.api.shell.openExternal(this.href); return false;">
-                            博客链接
-                        </a>
-                    </p>
-                    <p style="display:flex; align-items:center; gap:10px;">
-                        <span>当前版本：<span id="appVersion">...</span></span>
-                        <button id="btnCheckUpdate" style="height:24px; padding:0 10px;">检查更新</button>
-                        <button id="btnChangelog" style="height:24px; padding:0 10px;">更新日志</button>
-                    </p>
+                    <div class="about-dashboard">
+                        <div class="dash-section section-brand">
+                            <div class="hero-icon">📡</div>
+                            <div class="brand-info">
+                                <h2 class="hero-title">串口助手</h2>
+                                <div class="hero-version">Ver. <span id="appVersion">Loading...</span></div>
+                            </div>
+                        </div>
+
+                        <div class="dash-section section-info">
+                            <div class="info-card">
+                                <div class="info-grid">
+                                    <div class="info-cell">
+                                        <span class="cell-icon">🎅</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">作者</span>
+                                            <span class="cell-value">Satone</span>
+                                        </div>
+                                    </div>
+                                    <a href="mailto:satone_shichimiya@outlook.com" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📧</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">联系邮箱</span>
+                                            <span class="cell-value">点击发送邮件</span>
+                                        </div>
+                                    </a>
+                                    <a href="https://github.com/tylhk/SAEcom" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📦</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">GitHub</span>
+                                            <span class="cell-value">查看源码</span>
+                                        </div>
+                                    </a>
+                                    <a href="https://satone1008.cn/index.php/2025/09/16/saecom/" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📝</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">博客/讨论</span>
+                                            <span class="cell-value">访问主页</span>
+                                        </div>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dash-section section-actions">
+                            <button id="btnCheckUpdate" class="dash-btn primary">
+                                <span class="btn-icon">🔄</span> 检查更新
+                            </button>
+                            <button id="btnChangelog" class="dash-btn">
+                                <span class="btn-icon">📜</span> 更新日志
+                            </button>
+                            <div class="footer-copyright">Satone © 2025</div>
+                        </div>
+                    </div>
                 </div>
 
             </div>
@@ -286,14 +312,14 @@
                         </label>
                     </div>
                     <div class="setting-item">
-                        <div class="setting-label">弹出窗口置顶</div>
+                        <div class="setting-label">当窗口弹出时置顶该窗口</div>
                         <label class="el-switch">
                             <input type="checkbox" id="popTopToggle">
                             <span class="el-switch-core"></span>
                         </label>
                     </div>
                     <div class="setting-item">
-                        <div class="setting-label">收回时跳转串口页</div>
+                        <div class="setting-label">收回窗口时自动打开串口助手</div>
                         <label class="el-switch">
                             <input type="checkbox" id="dockJumpToggle">
                             <span class="el-switch-core"></span>
@@ -310,6 +336,13 @@
                         <div class="setting-label">更惊人的动画</div>
                         <label class="el-switch">
                             <input type="checkbox" id="animExtremeToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">冬季特效(建议开启夜间模式)</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="winterToggle">
                             <span class="el-switch-core"></span>
                         </label>
                     </div>

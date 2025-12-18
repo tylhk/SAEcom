@@ -2181,3 +2181,520 @@ dialog.sys-modal::backdrop {
     margin-left: 0 !important;
     width: 100%;
 }
+
+#page-about {
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.about-dashboard {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    gap: 40px;
+    width: 100%;
+    max-width: 1100px;
+    padding: 0 40px;
+    align-items: center;
+}
+
+.section-brand {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    gap: 15px;
+}
+
+.hero-icon {
+    font-size: 56px; /* 大图标 */
+    filter: drop-shadow(0 8px 12px rgba(64, 158, 255, 0.25));
+    animation: float-icon 3.5s ease-in-out infinite;
+}
+
+.brand-info .hero-title {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 700;
+    color: var(--el-text-color-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hero-badge {
+    font-size: 12px;
+    background: linear-gradient(135deg, #409EFF, #36d1dc);
+    color: white;
+    padding: 2px 6px;
+    border-radius: 4px;
+    vertical-align: middle;
+    letter-spacing: 1px;
+    box-shadow: 0 2px 4px rgba(64, 158, 255, 0.3);
+}
+
+.hero-version {
+    margin-top: 6px;
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    font-family: ui-monospace, monospace;
+    background: rgba(0,0,0,0.03);
+    padding: 2px 8px;
+    border-radius: 10px;
+    display: inline-block;
+}
+
+.section-info {
+    display: flex;
+    justify-content: center;
+}
+
+.info-card {
+    background: var(--el-bg-surface);
+    border: 1px solid var(--el-border-color);
+    border-radius: 16px;
+    padding: 20px 25px;
+    box-shadow: var(--el-shadow-sm);
+    width: 100%;
+    max-width: 500px;
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.info-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.08);
+}
+
+.info-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px 30px;
+}
+
+.info-cell {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background 0.2s;
+}
+
+.link-cell {
+    cursor: pointer;
+    text-decoration: none;
+}
+.link-cell:hover {
+    background: var(--el-fill-light);
+}
+.link-cell:hover .cell-icon {
+    transform: scale(1.1) rotate(5deg);
+}
+.link-cell:hover .cell-value {
+    color: var(--el-color-primary);
+}
+
+.cell-icon {
+    font-size: 20px;
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--el-fill-lighter);
+    border-radius: 8px;
+    color: var(--el-text-color-regular);
+    transition: transform 0.2s;
+}
+
+.cell-content {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+}
+
+.cell-label {
+    font-size: 11px;
+    color: var(--el-text-color-secondary);
+    text-transform: uppercase;
+}
+
+.cell-value {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    transition: color 0.2s;
+}
+
+.section-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-width: 140px;
+    align-items: flex-end;
+}
+
+.dash-btn {
+    width: 100%;
+    height: 42px;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 10px;
+    border: 1px solid var(--el-border-color);
+    background: var(--el-bg-surface);
+    color: var(--el-text-color-regular);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: all 0.2s;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.04);
+}
+
+.dash-btn:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(0,0,0,0.1);
+}
+
+.dash-btn.primary {
+    background: var(--el-bg-surface);
+    color: var(--el-text-color-regular);
+    border: 1px solid var(--el-border-color);
+    box-shadow: var(--el-shadow-sm);
+}
+
+.dash-btn.primary:hover {
+    background: var(--el-fill-lighter);
+    color: var(--el-text-color-regular);
+    border-color: var(--el-color-primary-hover);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.btn-icon { font-size: 16px; }
+
+.footer-copyright {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--el-text-color-placeholder);
+    align-self: center;
+}
+
+@keyframes float-icon {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+}
+
+.theme-dark .info-card {
+    background: var(--el-fill-light);
+    border-color: var(--el-border-color);
+}
+.theme-dark .info-card:hover {
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
+}
+.theme-dark .cell-icon {
+    background: var(--el-bg-surface);
+}
+.theme-dark .link-cell:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+.theme-dark .dash-btn {
+    background: var(--el-fill-light);
+    border-color: var(--el-border-color);
+}
+.theme-dark .dash-btn:hover {
+    background: var(--el-fill-lighter);
+}
+.theme-dark .dash-btn.primary {
+    background: var(--el-fill-light);
+    border-color: var(--el-border-color);
+    color: var(--el-text-color-primary);
+}
+.theme-dark .hero-version {
+    background: rgba(255,255,255,0.1);
+}
+
+.about-dashboard {
+    display: flex;
+    justify-content: space-evenly;
+    align-items: center;
+    width: 100%;
+    padding: 0 20px;
+}
+
+.dash-btn.shining-btn {
+    position: relative;
+}
+
+.dash-btn.shining-btn::after {
+    content: "";
+    position: absolute;
+    top: -3px;
+    right: -3px;
+    width: 8px;
+    height: 8px;
+    background: #F56C6C;
+    border: 2px solid var(--el-bg-surface); 
+    border-radius: 50%;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+    z-index: 10;
+}
+
+.theme-dark .dash-btn.shining-btn::after {
+    border-color: var(--el-fill-light);
+}
+
+#bottomNav button {
+    position: relative;
+}
+
+#bottomNav button.has-badge::after {
+    content: "";
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 8px;
+    height: 8px;
+    background: #F56C6C;
+    border-radius: 50%;
+    border: 2px solid #fbfcff; 
+    z-index: 10;
+}
+
+.theme-dark #bottomNav button.has-badge::after {
+    border-color: #0C1118;
+}
+
+#winterLayer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 9000;
+  overflow: hidden;
+}
+
+.snowflake {
+  position: absolute;
+  top: -10px;
+  color: #fff;
+  text-shadow: 0 0 3px rgba(0,0,0,0.2);
+  user-select: none;
+  pointer-events: none;
+  animation: fall linear forwards;
+}
+
+@keyframes fall {
+  to { transform: translateY(110vh); }
+}
+
+#snowballRack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 0;
+  margin-top: 10px;
+  opacity: 0;
+  transition: opacity 0.3s;
+  pointer-events: none;
+}
+
+#sidebar:not(.open) #snowballRack {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ammo-snowball {
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle at 30% 30%, #fff, #d0e4f5);
+  border-radius: 50%;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+  cursor: grab;
+  transition: transform 0.2s;
+  z-index: 2001;
+}
+
+.ammo-snowball:hover {
+  transform: scale(1.2);
+}
+
+.ammo-snowball:active {
+  cursor: grabbing;
+}
+
+.projectile {
+  position: fixed;
+  width: 20px;
+  height: 20px;
+  background: radial-gradient(circle at 30% 30%, #fff, #d0e4f5);
+  border-radius: 50%;
+  box-shadow: 0 4px 6px rgba(0,0,0,0.15);
+  z-index: 9999;
+  pointer-events: none;
+}
+
+.aim-line {
+  position: fixed;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.6);
+  transform-origin: 0 50%;
+  z-index: 9998;
+  pointer-events: none;
+}
+
+#winterGameArea {
+  position: absolute;
+  left: 60px;
+  right: 0;
+  bottom: 10px;
+  height: 120px;
+  pointer-events: none;
+  z-index: 8000;
+  overflow: hidden;
+}
+
+.snowman {
+  position: absolute;
+  bottom: 0;
+  width: 40px;
+  height: 60px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  transition: filter 0.3s;
+}
+
+.snowman-head {
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(circle at 30% 30%, #fff, #eee);
+  border-radius: 50%;
+  position: relative;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  z-index: 2;
+}
+
+.snowman-head::before, .snowman-head::after {
+  content: "";
+  position: absolute;
+  top: 8px;
+  width: 3px;
+  height: 3px;
+  background: #333;
+  border-radius: 50%;
+}
+.snowman-head::before { left: 6px; }
+.snowman-head::after { right: 6px; }
+
+.snowman-body {
+  width: 36px;
+  height: 36px;
+  background: radial-gradient(circle at 30% 30%, #fff, #eee);
+  border-radius: 50%;
+  margin-top: -4px;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+  position: relative;
+}
+
+.snowman-scarf {
+  position: absolute;
+  top: 22px;
+  width: 30px;
+  height: 6px;
+  background: #ff6b6b;
+  border-radius: 4px;
+  z-index: 3;
+}
+
+.snowman.frozen {
+  filter: sepia(1) hue-rotate(180deg) saturate(3) brightness(1.2);
+}
+.snowman.frozen .snowman-head::before, 
+.snowman.frozen .snowman-head::after {
+  background: #005577;
+}
+
+#snowballRack {
+  display: none !important;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  padding: 0;
+  margin: 0;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+#sidebar:not(.open) #snowballRack {
+  display: flex !important;
+  padding: 20px 0;
+  margin-top: 10px;
+  opacity: 1;
+  pointer-events: auto;
+  animation: fadeInRack 0.5s ease forwards;
+}
+
+@keyframes fadeInRack {
+  from { opacity: 0; transform: translateY(-10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+#winterGameArea {
+  position: absolute;
+  left: 60px;
+  right: 0;
+  bottom: 10px;
+  height: 120px;
+  pointer-events: none;
+  z-index: 8000;
+  overflow: visible !important;
+}
+
+.snow-splat {
+  position: fixed;
+  width: 30px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.9);
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 8001;
+  transform-origin: center bottom;
+  animation: splatFade 0.6s ease-out forwards;
+  box-shadow: 0 0 5px rgba(255,255,255,0.8);
+}
+
+@keyframes splatFade {
+  0% { transform: scale(0.5); opacity: 1; }
+  100% { transform: scale(2, 0.1); opacity: 0; }
+}
+
+.snowman.with-arms .snowman-body::before,
+.snowman.with-arms .snowman-body::after {
+  content: "";
+  position: absolute;
+  top: 12px;
+  width: 24px;
+  height: 3px;
+  background: #5d4037;
+  border-radius: 2px;
+  z-index: 1;
+  transition: all 0.3s ease;
+}
+
+.snowman.with-arms .snowman-body::before {
+  left: -20px;
+  transform: rotate(25deg);
+  transform-origin: right center;
+}
+
+.snowman.with-arms .snowman-body::after {
+  right: -20px;
+  transform: rotate(-25deg);
+  transform-origin: left center;
+}

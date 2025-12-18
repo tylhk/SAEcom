@@ -1,3 +1,14 @@
+try {
+    const s = JSON.parse(localStorage.getItem('appSettings') || '{}');
+    if (s.dark) document.documentElement.classList.add('theme-dark');
+} catch { }
+
+if (window.api && window.api.theme) {
+    window.api.theme.onApply(({ dark }) => {
+        document.documentElement.classList.toggle('theme-dark', !!dark);
+    });
+}
+
 function nowTs() {
     const d = new Date();
     const pad = (n, len = 2) => n.toString().padStart(len, '0');

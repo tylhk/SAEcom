@@ -4,62 +4,170 @@
     <meta charset="UTF-8">
     <title>更新日志</title>
     <style>
+        :root {
+            --c-primary: #409EFF;
+            --c-text: #303133;
+            --c-muted: #909399;
+            --c-bg: #ffffff;
+            --c-card-bg: #ffffff;
+            --c-card-hover: #f9fbff;
+            --c-border: #ebeef5;
+            --c-code-bg: #f4f4f5;
+            --c-shadow: rgba(0, 0, 0, 0.08);
+        }
+
+        :root.theme-dark {
+            --c-primary: #66b1ff;
+            --c-text: #E5EAF3;
+            --c-muted: #A3A6AD;
+            --c-bg: #141414;
+            --c-card-bg: #141414;
+            --c-card-hover: #1f1f1f;
+            --c-border: #2C2C2C;
+            --c-code-bg: #2b2b2b;
+            --c-shadow: rgba(0, 0, 0, 0.4);
+        }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-            line-height: 1.6;
-            color: #333;
-            max-width: 800px;
-            margin: 0 auto;
-            padding: 20px;
-            background: #fff;
+            font-family: "Helvetica Neue", Helvetica, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", Arial, sans-serif;
+            line-height: 1.5;
+            color: var(--c-text);
+            background: var(--c-bg);
+            margin: 0;
+            padding: 20px 30px;
+            font-size: 14px;
+            transition: background-color 0.2s, color 0.2s;
         }
-        @media (prefers-color-scheme: dark) {
-            body { background: #1e1e1e; color: #ddd; }
-            h1, h2, h3 { color: #fff; }
-            code { background: #333; }
-            hr { border-color: #444; }
+
+        #content { opacity: 0; transition: opacity 0.2s; }
+        #content.loaded { opacity: 1; }
+
+        .version-card {
+            padding: 15px 20px;
+            margin-bottom: 15px;
+            border-radius: 8px;
+            transition: all 0.25s cubic-bezier(0.25, 0.8, 0.25, 1);
+            border: 1px solid transparent;
+            position: relative;
         }
-        h1, h2, h3 { margin-top: 24px; margin-bottom: 16px; font-weight: 600; line-height: 1.25; }
-        h1 { font-size: 2em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
-        h2 { font-size: 1.5em; border-bottom: 1px solid #eaecef; padding-bottom: .3em; }
-        ul, ol { padding-left: 2em; }
+
+        .version-card:hover {
+            background-color: var(--c-card-hover);
+            transform: translateY(-3px);
+            box-shadow: 0 8px 20px var(--c-shadow);
+            border-color: var(--c-border);
+        }
+
+        .version-card::before {
+            content: "";
+            position: absolute;
+            left: 0;
+            top: 15px;
+            bottom: 15px;
+            width: 4px;
+            background: var(--c-primary);
+            border-radius: 0 4px 4px 0;
+            opacity: 0;
+            transition: opacity 0.2s;
+        }
+
+        .version-card:hover::before {
+            opacity: 1;
+        }
+
+        h1, h2 { font-weight: 600; margin: 10px 0; color: var(--c-primary); border-bottom: 1px solid var(--c-border); padding-bottom: 8px;}
+        h1 { font-size: 24px; }
+        h2 { font-size: 20px; }
+
+        h3 { 
+            color: var(--c-primary);
+            margin: 0 0 10px 0;
+            font-weight: 600;
+            font-size: 18px;
+            line-height: 1.2;
+            padding-bottom: 8px;
+            border-bottom: 1px solid var(--c-border);
+        }
+
+        ul { padding-left: 20px; margin: 5px 0 5px 0; }
+        li { margin-bottom: 4px; color: var(--c-text); }
+
+        .tag-line {
+            display: inline-block;
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--c-muted);
+            margin-top: 10px;
+            margin-bottom: 4px;
+            background: var(--c-code-bg);
+            padding: 2px 8px;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
         code {
-            padding: .2em .4em;
-            margin: 0;
-            font-size: 85%;
-            background-color: rgba(27,31,35,.05);
-            border-radius: 3px;
-            font-family: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+            padding: 2px 6px;
+            font-size: 0.9em;
+            background-color: var(--c-code-bg);
+            border-radius: 4px;
+            font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
         }
+
         blockquote {
-            color: #6a737d;
-            border-left: .25em solid #dfe2e5;
-            padding: 0 1em;
-            margin: 0;
+            margin: 10px 0;
+            padding: 5px 15px;
+            border-left: 4px solid var(--c-border);
+            color: var(--c-muted);
         }
-        hr { height: .25em; padding: 0; margin: 24px 0; background-color: #e1e4e8; border: 0; }
     </style>
 </head>
 <body>
     <div id="content">加载中...</div>
 
     <script>
+        function applyTheme(dark) {
+            document.documentElement.classList.toggle('theme-dark', !!dark);
+        }
+
+        try {
+            const s = JSON.parse(localStorage.getItem('appSettings') || '{}');
+            if (s.dark) applyTheme(true);
+        } catch {}
+
+        if (window.api && window.api.theme) {
+            window.api.theme.onApply((payload) => applyTheme(payload.dark));
+        }
+
         function parseMarkdown(md) {
+            if (!md) return '';
+
             let html = md
                 .replace(/^# (.*$)/gim, '<h1>$1</h1>')
                 .replace(/^## (.*$)/gim, '<h2>$1</h2>')
-                .replace(/^### (.*$)/gim, '<h3>$1</h3>')
-                .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>')
-                .replace(/\*\*(.*)\*\*/gim, '<b>$1</b>')
-                .replace(/\`(.*)\`/gim, '<code>$1</code>')
-                .replace(/^- (.*$)/gim, '<li>$1</li>')
-                .replace(/((<li>.*<\/li>\s*)+)/gim, '<ul>$1</ul>') // 包装列表
-                .replace(/\n/gim, '<br>');
+                .replace(/^### (.*$)/gim, '<h3>$1</h3>');
+
+            html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED).*?\*\*/gim, (match, p1) => {
+                return `<div class="tag-line">${p1}</div>`;
+            });
+
+            html = html
+                .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
+                .replace(/`(.*?)`/gim, '<code>$1</code>')
+                .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+            html = html.replace(/^\s*-\s+(.*)$/gim, '<li>$1</li>');
+            html = html.replace(/((<li>.*<\/li>\s*)+)/gim, '<ul>$1</ul>');
+
+            const versionBlockRegex = /(<h3>[\s\S]*?)(?=(<h3>|$))/g;
+            html = html.replace(versionBlockRegex, '<div class="version-card">$1</div>');
+
             return html;
         }
 
         window.api.changelog.onLoad((text) => {
-            document.getElementById('content').innerHTML = parseMarkdown(text);
+            const el = document.getElementById('content');
+            el.innerHTML = parseMarkdown(text);
+            el.classList.add('loaded');
         });
 
         window.api.changelog.request();
