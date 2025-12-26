@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8" />
+    <title>串口助手</title>
+    <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body>
+    <div id="app">
+        <aside id="sidebar" class="open">
+            <div class="sidebar-header">
+                <button id="toggleSidebar">≡</button>
+                <span>串口窗口</span>
+            </div>
+            <div class="sidebar-actions">
+                <button id="btnNew">新建面板</button>
+                <button id="btnRefreshPorts">刷新串口</button>
+            </div>
+            <ul id="panelList"></ul>
+            <div class="sidebar-footer">
+                <button id="btnSettings">设置</button>
+            </div>
+
+        </aside>
+
+        <main id="workspace">
+            <div id="panes"></div>
+        </main>
+
+        <div id="bottomPanel">
+            <div id="bottomNav">
+                <button data-page="serial">串口</button>
+                <button data-page="commands">命令</button>
+                <button data-page="about">关于</button>
+            </div>
+
+            <div id="bottomContent">
+                <div class="page" id="page-serial">
+                    <div class="row">
+                        <label>当前面板：</label>
+                        <span id="activePanelLabel">（未选择）</span>
+                        <button id="btnAddNote">添加备注</button>
+                        <button id="btnSaveLog">导出面板数据</button>
+                    </div>
+
+                    <div class="row" id="serial-param-row">
+                        <label>波特率：</label>
+                        <input id="baud" type="number" value="115200" min="110" step="1" />
+                        <label>数据位：</label>
+                        <select id="databits">
+                            <option>8</option>
+                            <option>7</option>
+                            <option>6</option>
+                            <option>5</option>
+                        </select>
+                        <label>停止位：</label>
+                        <select id="stopbits">
+                            <option>1</option>
+                            <option>2</option>
+                        </select>
+                        <label>校验：</label>
+                        <select id="parity">
+                            <option value="none">none</option>
+                            <option value="even">even</option>
+                            <option value="odd">odd</option>
+                            <option value="mark">mark</option>
+                            <option value="space">space</option>
+                        </select>
+                    </div>
+
+                    <div class="row" id="row-share-container"
+                        style="display:none; align-items:center; margin-bottom:6px;">
+                    </div>
+
+                    <div class="row" id="row-send-main">
+                        <input id="inputData" type="text" placeholder="输入要发送的数据…" />
+                        <button id="btnSend">发送</button>
+                    </div>
+
+                    <div class="row split-line" id="row-send-opts">
+                        <label>发送结尾：</label>
+                        <select id="append">
+                            <option value="CRLF">CRLF</option>
+                            <option value="none">无结尾</option>
+                            <option value="CR">CR</option>
+                            <option value="LF">LF</option>
+                        </select>
+                        <label>缓冲(ms):</label>
+                        <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
+                        <label><input type="checkbox" id="hexMode"> 以HEX格式发送</label>
+                        <label><input type="checkbox" id="echoSend"> 发送回显</label>
+                    </div>
+
+                    <div class="row">
+                        <label>文件：</label>
+                        <input id="fileName" type="text" placeholder="拖拽文件到此处…" readonly />
+                        <input id="fileChooser" type="file" style="display:none" />
+                        <button id="btnChooseFile">选择文件</button>
+                        <button id="btnSendFile">发送文件</button>
+                    </div>
+                </div>
+                <div class="page" id="page-commands" style="display:none">
+                    <div class="cmd-layout">
+                        <div id="cmdGrid" class="cmd-grid"></div>
+                        <div id="cmdTools" class="cmd-tools">
+                            <div class="pager">
+                                <button id="cmdPrev" title="上一页">◀</button>
+                                <button id="cmdNext" title="下一页">▶</button>
+                            </div>
+                            <button id="cmdEditPage">编辑命令</button>
+                            <button id="openScript">脚本发送</button>
+                            <div class="repeat">
+                                <label><input type="checkbox" id="cmdRepeat"> 定时发送</label>
+                            </div>
+                            <div class="repeat">
+                                <input id="cmdRepeatMs" type="number" min="1" step="1" value="1000" />
+                                <div class="note">ms</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="page" id="page-about" style="display:none">
+                    <div class="about-dashboard">
+                        <div class="dash-section section-brand">
+                            <div class="hero-icon">📡</div>
+                            <div class="brand-info">
+                                <h2 class="hero-title">串口助手</h2>
+                                <div class="hero-version">Ver. <span id="appVersion">Loading...</span></div>
+                            </div>
+                        </div>
+
+                        <div class="dash-section section-info">
+                            <div class="info-card">
+                                <div class="info-grid">
+                                    <div class="info-cell">
+                                        <span class="cell-icon">🎅</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">作者</span>
+                                            <span class="cell-value">Satone</span>
+                                        </div>
+                                    </div>
+                                    <a href="mailto:satone_shichimiya@outlook.com" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📧</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">联系邮箱</span>
+                                            <span class="cell-value">点击发送邮件</span>
+                                        </div>
+                                    </a>
+                                    <a href="https://github.com/tylhk/SAEcom" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📦</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">GitHub</span>
+                                            <span class="cell-value">查看源码</span>
+                                        </div>
+                                    </a>
+                                    <a href="https://satone1008.cn/index.php/2025/09/16/saecom/" class="info-cell link-cell" onclick="window.api.shell.openExternal(this.href); return false;">
+                                        <span class="cell-icon">📝</span>
+                                        <div class="cell-content">
+                                            <span class="cell-label">博客/讨论</span>
+                                            <span class="cell-value">访问主页</span>
+                                        </div>
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="dash-section section-actions">
+                            <button id="btnCheckUpdate" class="dash-btn primary">
+                                <span class="btn-icon">🔄</span> 检查更新
+                            </button>
+                            <button id="btnChangelog" class="dash-btn">
+                                <span class="btn-icon">📜</span> 更新日志
+                            </button>
+                            <div class="footer-copyright">Satone © 2025</div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <dialog id="dlgNew">
+            <h3>创建面板</h3>
+
+            <!-- 串口模式 -->
+            <div id="serialFields">
+                <select id="dlgPortList" style="width:100%"></select>
+            </div>
+
+            <!-- TCP 模式 -->
+            <div id="tcpFields" style="display:none;">
+                <div class="row">
+                    <label style="min-width:90px;">服务器地址：</label>
+                    <input id="tcpHost" placeholder="例如 127.0.0.1 或 demo.server.com" style="flex:1;">
+                </div>
+                <div class="row" style="margin-top:6px;">
+                    <label style="min-width:90px;">端口：</label>
+                    <input id="tcpPort" type="number" min="1" max="65535" value="502" style="width:160px;">
+                </div>
+            </div>
+
+            <div class="dlg-actions">
+                <label class="tcp-switch"><input id="useTcp" type="checkbox"> 使用 TCP 连接</label>
+                <div class="right">
+                    <button id="dlgCancel">取消</button>
+                    <button id="dlgCreate">创建</button>
+                </div>
+            </div>
+        </dialog>
+
+        <dialog id="dlgCmdEdit">
+
+            <div class="cmd-group-bar">
+                <label for="cmdGroupSelect">分组：</label>
+                <select id="cmdGroupSelect"></select>
+                <button id="cmdGroupNew">新建</button>
+                <button id="cmdGroupRename">重命名</button>
+                <button id="cmdGroupDelete">删除</button>
+                <span class="cmd-group-show-toggle">
+                    <label><input type="checkbox" id="cmdGroupShow"> 在命令页显示本分组</label>
+                </span>
+            </div>
+
+            <h3>编辑命令</h3>
+            <div class="cmd-table-wrap">
+                <table class="cmd-table">
+                    <thead>
+                        <tr>
+                            <th class="drag" style="width:57px;">排序</th>
+                            <th class="sel" style="width:44px;">
+                                <input id="cmdSelectAll" type="checkbox" title="全选/全不选">
+                            </th>
+                            <th>名称</th>
+                            <th>内容</th>
+                            <th style="width:96px;">模式</th>
+                            <th style="width:96px;">操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="cmdTableBody"></tbody>
+                </table>
+            </div>
+            <div class="cmd-edit-actions">
+                <button id="cmdAdd">新增命令</button>
+                <span style="flex:1"></span>
+                <button id="cmdDeleteSel">删除选中</button>
+                <button id="cmdMoveSel">移动选中</button>
+                <button id="cmdCopySel">复制选中</button>
+                <button id="cmdCancel">取消</button>
+                <button id="cmdSave">保存</button>
+            </div>
+        </dialog>
+
+        <dialog id="dlgScript">
+            <h3>脚本页</h3>
+            <div class="script-layout">
+                <textarea id="scriptEditor" placeholder="在此编写脚本（.js）" spellcheck="false"></textarea>
+
+                <div class="script-side">
+                    <div class="script-row">
+                        <button id="btnScriptNew">创建脚本</button>
+                        <button id="btnScriptSave">保存脚本</button>
+                        <button id="btnScriptDelete">删除脚本</button>
+                    </div>
+                    <div class="hint">当前文件：<span id="currentScriptName">（未选中）</span></div>
+                    <div class="script-list-wrap">
+                        <div class="hint">脚本目录：<span id="scriptDirHint"></span></div>
+                        <ul id="scriptList"></ul>
+                    </div>
+                    <div style="flex:1"></div>
+                    <div class="script-actions">
+                        <button id="btnScriptRun">运行脚本</button>
+                        <button id="btnScriptStop" disabled>停止运行</button>
+                        <button id="btnScriptClose">关闭</button>
+                    </div>
+                </div>
+            </div>
+        </dialog>
+
+        <dialog id="dlgScriptName">
+            <h4>新建脚本</h4>
+            <div style="display:flex;gap:8px;align-items:center;">
+                <input id="scriptNameInput" type="text" placeholder="输入名称（无需后缀）" style="flex:1" />
+                <span>.js</span>
+            </div>
+            <div style="margin-top:10px;text-align:right;">
+                <button id="scriptNameCancel">取消</button>
+                <button id="scriptNameOk">确定</button>
+            </div>
+        </dialog>
+        <dialog id="dlgSettings">
+            <div class="dlg">
+                <div class="dlg-header">
+                    <div class="dlg-title">设置</div>
+                    <button class="dlg-close" id="settingsClose">×</button>
+                </div>
+                <div class="dlg-body">
+                    <div class="setting-item">
+                        <div class="setting-label">全屏显示(F11)</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="fullscreenToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">夜间模式</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="nightToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">当窗口弹出时置顶该窗口</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="popTopToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">收回窗口时自动打开串口助手</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="dockJumpToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">惊人的动画</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="animToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">更惊人的动画</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="animExtremeToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <div class="setting-label">冬季特效(建议开启夜间模式)</div>
+                        <label class="el-switch">
+                            <input type="checkbox" id="winterToggle">
+                            <span class="el-switch-core"></span>
+                        </label>
+                    </div>
+                </div>
+                <div class="dlg-footer">
+                    <button id="settingsOk">确定</button>
+                </div>
+            </div>
+        </dialog>
+
+	<script src="./mock.js"></script>
+        <script src="./renderer.js"></script>
+    </div>
+</body>
+
+</html>
