@@ -2528,39 +2528,50 @@ dialog.sys-modal::backdrop {
 }
 
 .projectile {
-  position: fixed;
+  position: absolute;
   width: 20px;
   height: 20px;
   background: radial-gradient(circle at 30% 30%, #fff, #d0e4f5);
   border-radius: 50%;
-  box-shadow: 0 4px 6px rgba(0,0,0,0.15);
-  z-index: 9999;
-  pointer-events: none;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  pointer-events: none; 
+  z-index: 9000;
 }
 
-.aim-line {
+.aim-dot {
   position: fixed;
-  height: 2px;
+  width: 6px;
+  height: 6px;
   background: rgba(255, 255, 255, 0.6);
-  transform-origin: 0 50%;
-  z-index: 9998;
+  border-radius: 50%;
   pointer-events: none;
+  z-index: 9999;
+  transform: translate(-50%, -50%);
+}
+
+#sidebar:not(.open) #snowballRack {
+  display: flex; /* 去掉了 !important */
+  padding: 20px 0;
+  margin-top: 10px;
+  opacity: 1;
+  pointer-events: auto;
+  animation: fadeInRack 0.5s ease forwards;
 }
 
 #winterGameArea {
   position: absolute;
   left: 60px;
   right: 0;
-  bottom: 10px;
+  bottom: 0px;
   height: 120px;
   pointer-events: none;
   z-index: 8000;
-  overflow: hidden;
+  overflow: visible !important;
 }
 
 .snowman {
   position: absolute;
-  bottom: 0;
+  bottom: -6px;
   width: 40px;
   height: 60px;
   display: flex;

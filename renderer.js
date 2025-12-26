@@ -6,6 +6,7 @@
         document.head.appendChild(s);
     }
 })();
+let lockConfig = false;
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
 const panesEl = $('#panes');
@@ -447,10 +448,11 @@ function loadSettings() {
             anim: !!s.anim,
             animExtreme: !!s.animExtreme,
             popTop: s.popTop !== false,
-            dockJump: s.dockJump !== false
+            dockJump: s.dockJump !== false,
+            winter: !!s.winter
         };
     } catch {
-        return { fullscreen: false, dark: false, anim: false, popTop: true, dockJump: true };
+        return { fullscreen: false, dark: false, anim: false, popTop: true, dockJump: true, winter: false };
     }
 }
 function saveSettings(s) {
@@ -1519,6 +1521,8 @@ function echoIfEnabled(id, text) {
 }
 
 function setActive(id) {
+    lockConfig = true;
+
     if (state.activeId && inputData) {
         const prevPane = state.panes.get(state.activeId);
         if (prevPane) {
@@ -1551,6 +1555,8 @@ function setActive(id) {
             sendRowMain.style.display = 'none';
         }
     }
+    
+    setTimeout(() => { lockConfig = false; }, 50);
 }
 
 const winterToggle = document.getElementById('winterToggle');
@@ -1581,13 +1587,22 @@ if (winterToggle) {
 function applyWinter(enabled) {
     WINTER_CONFIG.enabled = enabled;
     const layer = document.getElementById('winterLayer') || createWinterLayer();
-    const rack = document.getElementById('snowballRack') || createSnowballRack();
-    const gameArea = document.getElementById('winterGameArea') || createGameArea();
+    
+    let rack = document.getElementById('snowballRack');
 
+    if (enabled) {
+        if (!rack) {
+            rack = createSnowballRack();
+        }
+        rack.style.display = 'flex';
+    } else {
+        if (rack) {
+            rack.remove();
+        }
+    }
+    
+    const gameArea = document.getElementById('winterGameArea') || createGameArea();
     layer.style.display = enabled ? 'block' : 'none';
-    
-    rack.style.display = enabled ? '' : 'none'; 
-    
     gameArea.style.display = enabled ? 'block' : 'none';
 
     if (enabled) {
@@ -1662,7 +1677,7 @@ function stopSnowFall() {
     if (layer) layer.innerHTML = '';
 }
 
-let dragData = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, ballEl: null, lineEl: null };
+let dragData = { active: false, startX: 0, startY: 0, currentX: 0, currentY: 0, ballEl: null, aimDots: [] };
 
 function onAmmoDragStart(e) {
     if (!WINTER_CONFIG.enabled) return;
@@ -1682,11 +1697,7 @@ function onAmmoDragStart(e) {
     dragData.currentX = centerX;
     dragData.currentY = centerY;
     dragData.ballEl = e.target;
-
-    const line = document.createElement('div');
-    line.className = 'aim-line';
-    document.body.appendChild(line);
-    dragData.lineEl = line;
+    dragData.aimDots = [];
 
     document.addEventListener('mousemove', onAmmoDragMove);
     document.addEventListener('mouseup', onAmmoDragEnd);
@@ -1700,18 +1711,36 @@ function onAmmoDragMove(e) {
 }
 
 function updateAimLine() {
-    if (!dragData.lineEl) return;
-    const dx = dragData.currentX - dragData.startX;
-    const dy = dragData.currentY - dragData.startY;
-    const len = Math.sqrt(dx*dx + dy*dy);
-    const angle = Math.atan2(dy, dx);
+    dragData.aimDots.forEach(d => d.remove());
+    dragData.aimDots = [];
 
-    dragData.lineEl.style.left = dragData.startX + 'px';
-    dragData.lineEl.style.top = dragData.startY + 'px';
-    dragData.lineEl.style.width = len + 'px';
-    dragData.lineEl.style.transform = `rotate(${angle}rad)`;
+    const dx = dragData.startX - dragData.currentX;
+    const dy = dragData.startY - dragData.currentY;
     
-    dragData.lineEl.style.opacity = Math.min(1, len / 200);
+    if (Math.sqrt(dx*dx + dy*dy) < 10) return;
+
+    const vx = dx * WINTER_CONFIG.powerScale;
+    const vy = dy * WINTER_CONFIG.powerScale;
+    
+    for (let t = 1; t <= 15; t++) {
+        const time = t * 2.5; 
+        
+        const futureX = dragData.startX + vx * time;
+        const futureY = dragData.startY + vy * time + 0.5 * WINTER_CONFIG.gravity * time * time;
+
+        if (futureY > window.innerHeight) break;
+
+        const dot = document.createElement('div');
+        dot.className = 'aim-dot';
+        dot.style.left = futureX + 'px';
+        dot.style.top = futureY + 'px';
+        
+        dot.style.opacity = (1 - t / 20).toString();
+        dot.style.transform = `translate(-50%, -50%) scale(${1 - t * 0.03})`;
+
+        document.body.appendChild(dot);
+        dragData.aimDots.push(dot);
+    }
 }
 
 function onAmmoDragEnd(e) {
@@ -1719,7 +1748,8 @@ function onAmmoDragEnd(e) {
     document.removeEventListener('mousemove', onAmmoDragMove);
     document.removeEventListener('mouseup', onAmmoDragEnd);
     
-    if (dragData.lineEl) dragData.lineEl.remove();
+    dragData.aimDots.forEach(d => d.remove());
+    dragData.aimDots = [];
 
     const dx = dragData.startX - e.clientX;
     const dy = dragData.startY - e.clientY;
@@ -1730,7 +1760,6 @@ function onAmmoDragEnd(e) {
 
     dragData.active = false;
     dragData.ballEl = null;
-    dragData.lineEl = null;
 }
 
 function fireSnowball(x, y, vx, vy) {
@@ -1744,7 +1773,7 @@ function fireSnowball(x, y, vx, vy) {
         el: ball,
         x: x, y: y,
         vx: vx, vy: vy,
-        r: 10 // 半径
+        r: 10
     });
 }
 
@@ -1921,21 +1950,34 @@ function checkCollision(projectile, pIdx) {
     const py = pRect.top + pRect.height/2;
 
     for (const snowman of WINTER_CONFIG.snowmen) {
-        if (Date.now() < snowman.frozenUntil) continue;
+        if (snowman.isFlying) continue;
 
         const sRect = snowman.el.getBoundingClientRect();
         
         if (px > sRect.left && px < sRect.right && 
             py > sRect.top && py < sRect.bottom) {
             
-            snowman.frozenUntil = Date.now() + 3000;
-            
             spawnShockwave(px, py);
             spawnConfetti(px, py);
 
+            const isFrozen = Date.now() < snowman.frozenUntil;
+
+            if (isFrozen) {
+                snowman.isFlying = true;
+                snowman.flyY = 0;
+                snowman.vx = (projectile.vx > 0 ? 1 : -1) * (5 + Math.random() * 5); 
+                snowman.vy = -10 - Math.random() * 5;
+                
+                snowman.el.classList.remove('frozen'); 
+            } else {
+                snowman.frozenUntil = Date.now() + 3000;
+                snowman.el.style.transform = `scale(0.95)`;
+                setTimeout(() => snowman.el.style.transform = '', 100);
+            }
+
             projectile.el.remove();
             WINTER_CONFIG.projectiles.splice(pIdx, 1);
-            return
+            return; 
         }
     }
 }
@@ -2990,6 +3032,8 @@ btnSend.addEventListener('click', async () => {
 
 function attachOptionListeners() {
     const writeOptions = () => {
+        if (lockConfig) return; 
+
         const id = state.activeId;
         if (!id) return;
         const pane = state.panes.get(id);
@@ -3098,16 +3142,12 @@ inputData.addEventListener('pointerdown', () => {
     requestAnimationFrame(() => {
         try {
             inputData.focus();
-            const len = inputData.value.length;
-            inputData.setSelectionRange(len, len);
         } catch { }
     });
 });
 inputData.addEventListener('click', () => {
     try {
         inputData.focus();
-        const len = inputData.value.length;
-        inputData.setSelectionRange(len, len);
     } catch { }
 }, true);
 
