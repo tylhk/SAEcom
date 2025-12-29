@@ -1335,7 +1335,15 @@ if (btnChangelog) {
             localStorage.setItem('lastReadVersion', ver);
         } catch {}
 
-        window.api.changelog.open();
+        if (window.api.changelog && window.api.changelog.request) {
+            window.api.changelog.request(); 
+        } else {
+            console.warn('window.api.changelog.request not found');
+            if(changelogContent) {
+                changelogContent.innerHTML = '<div style="padding:20px">暂无法获取日志内容</div>';
+                dlgChangelog.showModal();
+            }
+        }
     });
 }
 
@@ -4088,3 +4096,56 @@ function updateAboutBadge() {
     updateDeleteSelectedBtn();
 
 })();
+
+function parseChangelogMarkdown(md) {
+    if (!md) return '';
+
+    let html = md
+        .replace(/^# (.*$)/gim, '<h1>$1</h1>')
+        .replace(/^## (.*$)/gim, '<h2>$1</h2>')
+        .replace(/^### (.*$)/gim, '<h3>$1</h3>');
+
+    html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED).*?\*\*/gim, (match, p1) => {
+        return `<div class="tag-line">${p1}</div>`;
+    });
+
+    html = html
+        .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
+        .replace(/`(.*?)`/gim, '<code>$1</code>')
+        .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
+
+    html = html.replace(/^\s*-\s+(.*)$/gim, '<li>$1</li>');
+    html = html.replace(/((<li>.*<\/li>\s*)+)/gim, '<ul>$1</ul>');
+
+    const versionBlockRegex = /(<h3>[\s\S]*?)(?=(<h3>|$))/g;
+    html = html.replace(versionBlockRegex, '<div class="version-card">$1</div>');
+
+    return html;
+}
+
+const dlgChangelog = document.getElementById('dlgChangelog');
+const changelogClose = document.getElementById('changelogClose');
+const changelogContent = document.getElementById('changelogContent');
+
+if (changelogClose) {
+    changelogClose.addEventListener('click', () => dlgChangelog.close());
+}
+if (dlgChangelog) {
+    dlgChangelog.addEventListener('click', (e) => {
+        if (e.target === dlgChangelog) dlgChangelog.close();
+    });
+    
+    dlgChangelog.addEventListener('close', () => {
+        forceUnlockUI({ closeDialogs: false }); 
+    });
+}
+
+if (window.api && window.api.changelog && window.api.changelog.onLoad) {
+    window.api.changelog.onLoad((text) => {
+        if(changelogContent) {
+            changelogContent.innerHTML = parseChangelogMarkdown(text);
+            forceUnlockUI({ closeDialogs: false });
+            try { dlgChangelog.showModal(); } catch(e) { console.error(e); }
+        }
+    });
+}

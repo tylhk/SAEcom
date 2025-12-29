@@ -660,7 +660,7 @@ input[type="number"],
 
 /* ==========  底部功能区 ========== */
 #bottomNav {
-  width: 58px;
+  width: 56px;
   border-right: 1px solid var(--el-border-color);
   background: #fbfcff;
   display: flex;
@@ -2708,4 +2708,159 @@ dialog.sys-modal::backdrop {
   right: -20px;
   transform: rotate(-25deg);
   transform-origin: left center;
+}
+
+input[type="number"]::-webkit-inner-spin-button,
+input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"] {
+  -moz-appearance: textfield;
+}
+
+/* ========== 更新日志弹窗样式 (高级感设计) ========== */
+
+/* 弹窗基础容器 */
+#dlgChangelog {
+    width: 600px;
+    max-width: 90vw;
+    height: 70vh;
+    padding: 0;
+    border: none;
+    border-radius: 12px;
+    background: var(--el-bg-surface);
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.22);
+    overflow: hidden;
+    flex-direction: column;
+}
+
+/* 遮罩层动画 (背景变暗效果) */
+#dlgChangelog::backdrop {
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(2px); /* 可选：给背景加点毛玻璃模糊，更高级 */
+    transition: background 0.3s;
+}
+
+/* 右上角悬浮关闭按钮 */
+.clean-close {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 32px;
+    height: 32px;
+    border: none;
+    background: transparent;
+    font-size: 24px;
+    font-family: Arial, sans-serif;
+    color: var(--el-text-color-secondary);
+    cursor: pointer;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    z-index: 10;
+    box-shadow: none; /* 移除默认按钮阴影 */
+}
+
+.clean-close:hover {
+    background: var(--el-fill-lighter);
+    color: var(--el-text-color-primary);
+    transform: rotate(90deg); /* 趣味交互：鼠标悬停旋转 */
+}
+
+.changelog-container {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 20px 0;
+}
+
+.changelog-header {
+    padding: 0 30px 10px;
+    margin: 0;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--el-text-color-primary);
+    border-bottom: 1px solid var(--el-border-color);
+}
+
+.changelog-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 20px 30px;
+}
+
+/* --- 下面是移植并优化过的 Markdown 样式 --- */
+
+/* 版本卡片 */
+.version-card {
+    padding: 16px 20px;
+    margin-bottom: 16px;
+    border-radius: 8px;
+    background: var(--el-bg-surface);
+    border: 1px solid var(--el-border-color);
+    transition: transform 0.2s, box-shadow 0.2s;
+    position: relative;
+}
+
+.version-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    background: var(--el-fill-light);
+}
+
+/* 左侧装饰条 */
+.version-card::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 15px;
+    bottom: 15px;
+    width: 4px;
+    background: var(--el-color-primary);
+    border-radius: 0 4px 4px 0;
+    opacity: 0.6;
+}
+.version-card:hover::before { opacity: 1; }
+
+.changelog-body h3 {
+    margin: 0 0 10px 0;
+    font-size: 18px;
+    color: var(--el-color-primary);
+    border-bottom: 1px solid var(--el-border-color);
+    padding-bottom: 6px;
+}
+
+.changelog-body ul {
+    padding-left: 20px;
+    margin: 8px 0;
+}
+
+.changelog-body li {
+    margin-bottom: 6px;
+    color: var(--el-text-color-regular);
+    line-height: 1.6;
+}
+
+/* 标签样式 (FIX, UPDATE等) */
+.tag-line {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--el-text-color-secondary);
+    margin: 12px 0 6px;
+    background: var(--el-fill-lighter);
+    padding: 2px 8px;
+    border-radius: 4px;
+}
+
+/* 深色模式微调 */
+:root.theme-dark #dlgChangelog {
+    box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+:root.theme-dark .version-card:hover {
+    background: #1c1f26; /*稍微亮一点的深色背景*/
 }
