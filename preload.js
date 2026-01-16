@@ -22,7 +22,8 @@ contextBridge.exposeInMainWorld('api', {
   window: {
     setFullscreen: (flag) => ipcRenderer.send('window:set-fullscreen', { flag }),
     toggleFullscreen: () => ipcRenderer.send('window:toggle-fullscreen'),
-    focus: () => ipcRenderer.send('window:focus')
+    focus: () => ipcRenderer.send('window:focus'),
+    setOscilloscopeTop: (flag) => ipcRenderer.send('window:set-oscilloscope-top', { flag }),
   },
   serial: {
     list: () => ipcRenderer.invoke('serial:list'),

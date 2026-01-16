@@ -43,6 +43,7 @@
                         <span id="activePanelLabel">（未选择）</span>
                         <button id="btnAddNote">添加备注</button>
                         <button id="btnSaveLog">导出面板数据</button>
+                        <button id="btnShowWave">打开示波器</button>
                     </div>
 
                     <div class="row" id="serial-param-row">
@@ -80,6 +81,8 @@
                     </div>
 
                     <div class="row split-line" id="row-send-opts">
+                        <label>接收缓冲(ms):</label>
+                        <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
                         <label>发送结尾：</label>
                         <select id="append">
                             <option value="CRLF">CRLF</option>
@@ -87,8 +90,6 @@
                             <option value="CR">CR</option>
                             <option value="LF">LF</option>
                         </select>
-                        <label>缓冲(ms):</label>
-                        <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
                         <label><input type="checkbox" id="hexMode"> 以HEX格式发送</label>
                         <label><input type="checkbox" id="echoSend"> 发送回显</label>
                     </div>
@@ -98,6 +99,13 @@
                         <input id="fileName" type="text" placeholder="拖拽文件到此处…" readonly />
                         <input id="fileChooser" type="file" style="display:none" />
                         <button id="btnChooseFile">选择文件</button>
+                        <label>发送协议：</label>
+                        <select id="sendProtocol" style="width: 100px; margin-right: 6px;" title="选择发送协议">
+                            <option value="raw">直接发送</option>
+                            <option value="xmodem">XModem</option>
+                            <option value="ymodem">YModem</option>
+                            <option value="zmodem">ZModem</option>
+                        </select>
                         <button id="btnSendFile">发送文件</button>
                     </div>
                 </div>

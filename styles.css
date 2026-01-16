@@ -2720,9 +2720,6 @@ input[type="number"] {
   -moz-appearance: textfield;
 }
 
-/* ========== 更新日志弹窗样式 (高级感设计) ========== */
-
-/* 弹窗基础容器 */
 #dlgChangelog {
     width: 600px;
     max-width: 90vw;
@@ -2736,14 +2733,12 @@ input[type="number"] {
     flex-direction: column;
 }
 
-/* 遮罩层动画 (背景变暗效果) */
 #dlgChangelog::backdrop {
     background: rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(2px); /* 可选：给背景加点毛玻璃模糊，更高级 */
+    backdrop-filter: blur(2px);
     transition: background 0.3s;
 }
 
-/* 右上角悬浮关闭按钮 */
 .clean-close {
     position: absolute;
     top: 12px;
@@ -2762,13 +2757,13 @@ input[type="number"] {
     justify-content: center;
     transition: all 0.2s;
     z-index: 10;
-    box-shadow: none; /* 移除默认按钮阴影 */
+    box-shadow: none;
 }
 
 .clean-close:hover {
     background: var(--el-fill-lighter);
     color: var(--el-text-color-primary);
-    transform: rotate(90deg); /* 趣味交互：鼠标悬停旋转 */
+    transform: rotate(90deg);
 }
 
 .changelog-container {
@@ -2793,9 +2788,6 @@ input[type="number"] {
     padding: 20px 30px;
 }
 
-/* --- 下面是移植并优化过的 Markdown 样式 --- */
-
-/* 版本卡片 */
 .version-card {
     padding: 16px 20px;
     margin-bottom: 16px;
@@ -2812,7 +2804,6 @@ input[type="number"] {
     background: var(--el-fill-light);
 }
 
-/* 左侧装饰条 */
 .version-card::before {
     content: "";
     position: absolute;
@@ -2845,7 +2836,6 @@ input[type="number"] {
     line-height: 1.6;
 }
 
-/* 标签样式 (FIX, UPDATE等) */
 .tag-line {
     display: inline-block;
     font-size: 12px;
@@ -2857,10 +2847,55 @@ input[type="number"] {
     border-radius: 4px;
 }
 
-/* 深色模式微调 */
 :root.theme-dark #dlgChangelog {
     box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
 }
 :root.theme-dark .version-card:hover {
-    background: #1c1f26; /*稍微亮一点的深色背景*/
+    background: #1c1f26;
+}
+
+.ctx-menu {
+  position: fixed;
+  z-index: 10000;
+  width: 180px;
+  background: var(--el-bg-surface);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-radius);
+  box-shadow: var(--el-shadow-md);
+  padding: 5px 0;
+  display: none;
+  flex-direction: column;
+  user-select: none;
+}
+
+.ctx-menu.visible {
+  display: flex;
+  animation: fade-in 0.1s ease-out;
+}
+
+.ctx-item {
+  padding: 8px 16px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--el-text-color-primary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: background 0.1s;
+}
+
+.ctx-item:hover {
+  background: var(--el-fill-lighter);
+  color: var(--el-color-primary);
+}
+
+.ctx-separator {
+  height: 1px;
+  background: var(--el-border-color);
+  margin: 4px 0;
+}
+
+@keyframes fade-in {
+  from { opacity: 0; transform: scale(0.98); }
+  to { opacity: 1; transform: scale(1); }
 }

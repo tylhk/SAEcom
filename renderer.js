@@ -6,6 +6,7 @@
         document.head.appendChild(s);
     }
 })();
+let activeTransfer = null;
 let lockConfig = false;
 const $ = sel => document.querySelector(sel);
 const $$ = sel => Array.from(document.querySelectorAll(sel));
@@ -34,6 +35,7 @@ const tcpHost = $('#tcpHost');
 const tcpPort = $('#tcpPort');
 const btnCheckUpdate = document.getElementById('btnCheckUpdate');
 const btnChangelog = document.getElementById('btnChangelog');
+const sendProtocol = $('#sendProtocol');
 let commandsSnapshot = null;
 let cmdGroupsMetaSnapshot = null;
 let CMD_DND = {
@@ -1329,17 +1331,17 @@ if (btnChangelog) {
     btnChangelog.addEventListener('click', async () => {
         btnChangelog.classList.remove('shining-btn');
         updateAboutBadge();
-        
+
         try {
             const ver = await window.api.app.getVersion();
             localStorage.setItem('lastReadVersion', ver);
-        } catch {}
+        } catch { }
 
         if (window.api.changelog && window.api.changelog.request) {
-            window.api.changelog.request(); 
+            window.api.changelog.request();
         } else {
             console.warn('window.api.changelog.request not found');
-            if(changelogContent) {
+            if (changelogContent) {
                 changelogContent.innerHTML = '<div style="padding:20px">暂无法获取日志内容</div>';
                 dlgChangelog.showModal();
             }
@@ -1563,7 +1565,7 @@ function setActive(id) {
             sendRowMain.style.display = 'none';
         }
     }
-    
+
     setTimeout(() => { lockConfig = false; }, 50);
 }
 
@@ -1595,7 +1597,7 @@ if (winterToggle) {
 function applyWinter(enabled) {
     WINTER_CONFIG.enabled = enabled;
     const layer = document.getElementById('winterLayer') || createWinterLayer();
-    
+
     let rack = document.getElementById('snowballRack');
 
     if (enabled) {
@@ -1608,7 +1610,7 @@ function applyWinter(enabled) {
             rack.remove();
         }
     }
-    
+
     const gameArea = document.getElementById('winterGameArea') || createGameArea();
     layer.style.display = enabled ? 'block' : 'none';
     gameArea.style.display = enabled ? 'block' : 'none';
@@ -1640,14 +1642,14 @@ function createGameArea() {
 function createSnowballRack() {
     const rack = document.createElement('div');
     rack.id = 'snowballRack';
-    for(let i=0; i<5; i++) {
+    for (let i = 0; i < 5; i++) {
         const ball = document.createElement('div');
         ball.className = 'ammo-snowball';
         ball.dataset.idx = i;
         ball.addEventListener('mousedown', onAmmoDragStart);
         rack.appendChild(ball);
     }
-    
+
     const sb = document.getElementById('sidebar');
     const actions = sb.querySelector('.sidebar-actions');
     if (actions) {
@@ -1665,16 +1667,16 @@ function startSnowFall() {
         if (!WINTER_CONFIG.enabled) return;
         const flake = document.createElement('div');
         flake.className = 'snowflake';
-        flake.textContent = ['❄', '❅', '❆', '•'][Math.floor(Math.random()*4)];
+        flake.textContent = ['❄', '❅', '❆', '•'][Math.floor(Math.random() * 4)];
         flake.style.left = Math.random() * 100 + 'vw';
         flake.style.opacity = Math.random();
         flake.style.fontSize = (10 + Math.random() * 20) + 'px';
         const duration = 5 + Math.random() * 10;
         flake.style.animationDuration = duration + 's';
-        
+
         layer.appendChild(flake);
-        
-        setTimeout(() => { if(flake.parentNode) flake.remove(); }, duration * 1000);
+
+        setTimeout(() => { if (flake.parentNode) flake.remove(); }, duration * 1000);
     }, 400);
 }
 
@@ -1724,15 +1726,15 @@ function updateAimLine() {
 
     const dx = dragData.startX - dragData.currentX;
     const dy = dragData.startY - dragData.currentY;
-    
-    if (Math.sqrt(dx*dx + dy*dy) < 10) return;
+
+    if (Math.sqrt(dx * dx + dy * dy) < 10) return;
 
     const vx = dx * WINTER_CONFIG.powerScale;
     const vy = dy * WINTER_CONFIG.powerScale;
-    
+
     for (let t = 1; t <= 15; t++) {
-        const time = t * 2.5; 
-        
+        const time = t * 2.5;
+
         const futureX = dragData.startX + vx * time;
         const futureY = dragData.startY + vy * time + 0.5 * WINTER_CONFIG.gravity * time * time;
 
@@ -1742,7 +1744,7 @@ function updateAimLine() {
         dot.className = 'aim-dot';
         dot.style.left = futureX + 'px';
         dot.style.top = futureY + 'px';
-        
+
         dot.style.opacity = (1 - t / 20).toString();
         dot.style.transform = `translate(-50%, -50%) scale(${1 - t * 0.03})`;
 
@@ -1755,14 +1757,14 @@ function onAmmoDragEnd(e) {
     if (!dragData.active) return;
     document.removeEventListener('mousemove', onAmmoDragMove);
     document.removeEventListener('mouseup', onAmmoDragEnd);
-    
+
     dragData.aimDots.forEach(d => d.remove());
     dragData.aimDots = [];
 
     const dx = dragData.startX - e.clientX;
     const dy = dragData.startY - e.clientY;
 
-    if (Math.sqrt(dx*dx + dy*dy) > 20) {
+    if (Math.sqrt(dx * dx + dy * dy) > 20) {
         fireSnowball(dragData.startX, dragData.startY, dx * WINTER_CONFIG.powerScale, dy * WINTER_CONFIG.powerScale);
     }
 
@@ -1787,7 +1789,7 @@ function fireSnowball(x, y, vx, vy) {
 
 function startGameLoop() {
     if (WINTER_CONFIG.gameLoop) return;
-    
+
     let spawnTimer = 0;
     const sidebarWidth = 260;
 
@@ -1797,13 +1799,13 @@ function startGameLoop() {
         const sidebar = document.getElementById('sidebar');
         const gameArea = document.getElementById('winterGameArea');
         const isSidebarOpen = sidebar.classList.contains('open');
-        
+
         const areaRect = gameArea ? gameArea.getBoundingClientRect() : null;
         const groundY = areaRect ? areaRect.bottom : (window.innerHeight - 10);
-        
+
         if (!isSidebarOpen) {
             spawnTimer++;
-            if (spawnTimer > 180) { 
+            if (spawnTimer > 180) {
                 spawnSnowman();
                 spawnTimer = 0;
             }
@@ -1811,7 +1813,7 @@ function startGameLoop() {
 
         for (let i = WINTER_CONFIG.projectiles.length - 1; i >= 0; i--) {
             const p = WINTER_CONFIG.projectiles[i];
-            
+
             p.vy += WINTER_CONFIG.gravity;
             p.x += p.vx;
             p.y += p.vy;
@@ -1839,14 +1841,14 @@ function startGameLoop() {
 
         for (let i = WINTER_CONFIG.snowmen.length - 1; i >= 0; i--) {
             const s = WINTER_CONFIG.snowmen[i];
-            
+
             if (typeof s.rot === 'undefined') s.rot = 0;
             if (typeof s.isFlying === 'undefined') s.isFlying = false;
 
             if (isSidebarOpen) {
                 if (s.x < sidebarWidth + 20 && !s.isFlying) {
                     s.isFlying = true;
-                    s.vx = 10 + Math.random() * 5; 
+                    s.vx = 10 + Math.random() * 5;
                     s.vy = -12 - Math.random() * 5;
                 }
             }
@@ -1857,10 +1859,10 @@ function startGameLoop() {
                 s.y += s.vy;
                 if (typeof s.flyY === 'undefined') s.flyY = 0;
                 s.flyY += s.vy;
-                
+
                 s.rot += 15;
 
-                if (s.flyY > 200) { 
+                if (s.flyY > 200) {
                     s.el.remove();
                     WINTER_CONFIG.snowmen.splice(i, 1);
                     continue;
@@ -1868,14 +1870,14 @@ function startGameLoop() {
 
                 s.el.style.left = s.x + 'px';
                 s.el.style.transform = `translateY(${s.flyY}px) rotate(${s.rot}deg)`;
-                
-                continue; 
+
+                continue;
             }
 
             const now = Date.now();
             if (now < s.frozenUntil) {
                 if (!s.el.classList.contains('frozen')) s.el.classList.add('frozen');
-                continue; 
+                continue;
             } else {
                 s.el.classList.remove('frozen');
             }
@@ -1891,7 +1893,7 @@ function startGameLoop() {
             }
 
             s.x += s.vx;
-            
+
             if (s.x > areaWidth - 40) s.vx = -Math.abs(s.vx);
             if (s.x < 0) s.vx = Math.abs(s.vx);
 
@@ -1908,7 +1910,7 @@ function spawnSplat(x, y) {
     splat.className = 'snow-splat';
     splat.style.left = (x - 15) + 'px';
     splat.style.top = (y - 5) + 'px';
-    
+
     const scale = 0.8 + Math.random() * 0.4;
     splat.style.transform = `scale(${scale})`;
 
@@ -1931,17 +1933,17 @@ function stopGameLoop() {
 function spawnSnowman() {
     const area = document.getElementById('winterGameArea');
     if (!area) return;
-    
+
     if (WINTER_CONFIG.snowmen.length >= 5) return;
 
     const el = document.createElement('div');
     el.className = 'snowman';
     el.innerHTML = `<div class="snowman-head"></div><div class="snowman-scarf"></div><div class="snowman-body"></div>`;
-    
+
     const maxW = area.clientWidth - 50;
     const startX = Math.random() * maxW;
     el.style.left = startX + 'px';
-    
+
     area.appendChild(el);
 
     WINTER_CONFIG.snowmen.push({
@@ -1954,17 +1956,17 @@ function spawnSnowman() {
 
 function checkCollision(projectile, pIdx) {
     const pRect = projectile.el.getBoundingClientRect();
-    const px = pRect.left + pRect.width/2;
-    const py = pRect.top + pRect.height/2;
+    const px = pRect.left + pRect.width / 2;
+    const py = pRect.top + pRect.height / 2;
 
     for (const snowman of WINTER_CONFIG.snowmen) {
         if (snowman.isFlying) continue;
 
         const sRect = snowman.el.getBoundingClientRect();
-        
-        if (px > sRect.left && px < sRect.right && 
+
+        if (px > sRect.left && px < sRect.right &&
             py > sRect.top && py < sRect.bottom) {
-            
+
             spawnShockwave(px, py);
             spawnConfetti(px, py);
 
@@ -1973,10 +1975,10 @@ function checkCollision(projectile, pIdx) {
             if (isFrozen) {
                 snowman.isFlying = true;
                 snowman.flyY = 0;
-                snowman.vx = (projectile.vx > 0 ? 1 : -1) * (5 + Math.random() * 5); 
+                snowman.vx = (projectile.vx > 0 ? 1 : -1) * (5 + Math.random() * 5);
                 snowman.vy = -10 - Math.random() * 5;
-                
-                snowman.el.classList.remove('frozen'); 
+
+                snowman.el.classList.remove('frozen');
             } else {
                 snowman.frozenUntil = Date.now() + 3000;
                 snowman.el.style.transform = `scale(0.95)`;
@@ -1985,7 +1987,7 @@ function checkCollision(projectile, pIdx) {
 
             projectile.el.remove();
             WINTER_CONFIG.projectiles.splice(pIdx, 1);
-            return; 
+            return;
         }
     }
 }
@@ -2667,7 +2669,7 @@ function formatBytes(bytes, mode = 'text') {
             const h = b.toString(16).padStart(2, '0').toUpperCase();
             return (b === 10) ? `${h}\n` : h;
         }).join(' ').replace(/\n /g, '\n');
-        
+
         if (!str.endsWith('\n')) str += ' ';
         return str;
     }
@@ -2676,6 +2678,12 @@ function formatBytes(bytes, mode = 'text') {
 }
 
 window.api.serial.onData(({ id, bytes }) => {
+    if (activeTransfer && activeTransfer.id === id) {
+        activeTransfer.onData(bytes);
+        return;
+    }
+    const strData = new TextDecoder().decode(bytes);
+    feedWaveData(id, strData);
     const bufferTime = parseInt(bufferInput.value || '0', 10);
     const pane = state.panes.get(id);
     if (!pane) return;
@@ -2721,6 +2729,12 @@ window.api.serial.onData(({ id, bytes }) => {
 });
 
 window.api.tcp.onData(({ id, bytes }) => {
+    if (activeTransfer && activeTransfer.id === id) {
+        activeTransfer.onData(bytes);
+        return;
+    }
+    const strData = new TextDecoder().decode(bytes);
+    feedWaveData(id, strData);
     const bufferTime = parseInt(bufferInput.value || '0', 10);
     const pane = state.panes.get(id);
     if (!pane) return;
@@ -3040,7 +3054,7 @@ btnSend.addEventListener('click', async () => {
 
 function attachOptionListeners() {
     const writeOptions = () => {
-        if (lockConfig) return; 
+        if (lockConfig) return;
 
         const id = state.activeId;
         if (!id) return;
@@ -3100,6 +3114,8 @@ btnSendFile.addEventListener('click', async () => {
     const filePath = fileNameInput.dataset.fullPath;
     if (!filePath) return alert('请先选择文件');
 
+    const protocol = sendProtocol ? sendProtocol.value : 'raw';
+
     const pane = state.panes.get(id);
     const log = (msg) => {
         const line = `[系统] ${msg}\n`;
@@ -3109,20 +3125,67 @@ btnSendFile.addEventListener('click', async () => {
         appendTextTail(pane, line);
     };
 
+    if (protocol !== 'raw') {
+        if (protocol === 'zmodem') {
+            alert('ZModem 协议暂未实现，请使用 YModem');
+            return;
+        }
+
+        log(`启动 ${protocol.toUpperCase()} 传输... 请确保接收端已进入接收模式 (等待C字符)`);
+
+        const sender = new YModemSender(id, protocol, (msg) => {
+            const line = `[系统] ${msg}\n`;
+            pane.textBuffer += line;
+            pane.hexBuffer += line;
+            pane.chunks.push({ text: line, hex: line, isEcho: false });
+            appendTextTail(pane, line);
+        });
+
+        activeTransfer = sender;
+
+        try {
+            const { hex, length, error } = await window.api.file.readHex(filePath);
+            if (error) throw new Error(error);
+
+            const rawBytes = new Uint8Array(
+                hex.match(/.{1,2}/g).map(byte => parseInt(byte, 16))
+            );
+
+            await sender.start(rawBytes, fileNameInput.value);
+
+        } catch (e) {
+            log(`[错误] ${e.message}`);
+            await window.api.serial.write(id, new Uint8Array([0x18, 0x18, 0x18, 0x18, 0x18]), 'raw');
+        } finally {
+            activeTransfer = null;
+        }
+        return;
+    }
+
     try {
         const { hex, length, error } = await window.api.file.readHex(filePath);
         if (error) { log('读取文件失败：' + error); return; }
 
         log(`开始发送文件：${fileNameInput.value}（${length} 字节）`);
         const chunkSize = 2048;
-
         const isTcp = (pane.type === 'tcp');
+        let lastPct = 0;
         for (let i = 0; i < hex.length; i += chunkSize) {
             const chunk = hex.slice(i, i + chunkSize);
             const res = isTcp
                 ? await window.api.tcp.write(id, chunk, 'hex', 'none')
                 : await window.api.serial.write(id, chunk, 'hex', 'none');
+
             if (!res.ok) { log('文件发送失败：' + res.error); return; }
+            const currentPos = i + chunk.length;
+            const percent = Math.floor((currentPos / hex.length) * 100);
+            if (percent >= lastPct + 20 || percent === 100) {
+                if (percent > lastPct) {
+                    log(`发送进度: ${percent}%`);
+                    lastPct = percent;
+                    await new Promise(r => setTimeout(r, 5));
+                }
+            }
         }
         log(`文件发送完成：${fileNameInput.value}（${length} 字节）`);
     } catch (e) {
@@ -3141,7 +3204,6 @@ btnSendFile.addEventListener('click', async () => {
                 } catch { }
             };
             requestAnimationFrame(() => { refocus(); requestAnimationFrame(refocus); });
-
         }
     }
 });
@@ -3735,12 +3797,211 @@ function clampAllPanesToWorkspace() {
 function updateAboutBadge() {
     const btnAbout = document.querySelector('#bottomNav button[data-page="about"]');
     if (!btnAbout) return;
-    
+
     const hasUpdate = (btnCheckUpdate && btnCheckUpdate.classList.contains('shining-btn'));
     const hasLog = (btnChangelog && btnChangelog.classList.contains('shining-btn'));
-    
+
     btnAbout.classList.toggle('has-badge', hasUpdate || hasLog);
 }
+
+let waveWin = null;
+const btnShowWave = $('#btnShowWave');
+
+function openWaveWindow() {
+    if (waveWin && !waveWin.closed) {
+        waveWin.focus();
+        return;
+    }
+
+    const paneId = state.activeId;
+    const pane = state.panes.get(paneId);
+    const paneName = pane ? (pane.note || pane.info.name || '未命名') : '未知面板';
+    const portName = paneId || '';
+    const titleText = `${paneName} (${portName})`;
+
+    const width = 800;
+    const height = 500;
+    const left = (window.screen.width - width) / 2;
+    const top = (window.screen.height - height) / 2;
+
+    const features = `width=${width},height=${height},left=${left},top=${top},frame=false,transparent=true,autoHideMenuBar=true,backgroundColor=#1e1e1e`;
+
+    waveWin = window.open('', 'SerialWave', features);
+
+    if (!waveWin) return;
+
+    const doc = waveWin.document;
+    doc.open();
+    doc.write(`
+<!DOCTYPE html>
+<html>
+<head>
+<title>示波器 - ${titleText}</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #1e1e1e; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; border: 1px solid #444; box-sizing: border-box; }
+  #titlebar { height: 32px; background: #252526; display: flex; align-items: center; justify-content: space-between; padding: 0 10px; border-bottom: 1px solid #333; -webkit-app-region: drag; user-select: none; flex-shrink: 0; }
+  .title-left { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #ccc; font-weight: 500; }
+  .help-icon { display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; border-radius: 50%; border: 1px solid #666; color: #888; font-size: 12px; cursor: help; -webkit-app-region: no-drag; position: relative; }
+  .help-icon:hover { color: #fff; border-color: #fff; background: rgba(255,255,255,0.1); }
+  .help-icon .tooltip { visibility: hidden; position: absolute; top: 24px; left: 0; width: 220px; background: #2d2d2d; color: #eee; padding: 8px 10px; border-radius: 4px; border: 1px solid #444; box-shadow: 0 4px 12px rgba(0,0,0,0.5); font-size: 12px; line-height: 1.5; z-index: 100; opacity: 0; transform: translateY(-5px); transition: all 0.2s; pointer-events: none; white-space: normal; text-align: left; }
+  .help-icon:hover .tooltip { visibility: visible; opacity: 1; transform: translateY(0); }
+  .win-controls { display: flex; gap: 0; -webkit-app-region: no-drag; }
+  .win-btn { width: 32px; height: 32px; border: none; background: transparent; color: #aaa; display: flex; align-items: center; justify-content: center; font-size: 14px; cursor: pointer; outline: none; }
+  .win-btn:hover { background: #3e3e42; color: #fff; }
+  .win-btn.close:hover { background: #e81123; color: #fff; }
+  .win-btn.pinned { 
+      background: #409EFF;
+      color: #fff;
+      box-shadow: 0 0 4px rgba(64, 158, 255, 0.5);
+  }
+  .win-btn.pinned:hover {
+      background: #66b1ff;
+  }
+  #main { flex: 1; position: relative; display: flex; flex-direction: column; }
+  canvas { flex: 1; display: block; width: 100%; height: 100%; cursor: crosshair; }
+  #info-overlay { position: absolute; top: 10px; right: 10px; font-family: monospace; font-size: 12px; color: #0f0; background: rgba(0,0,0,0.6); padding: 4px 8px; border-radius: 4px; pointer-events: none; border: 1px solid rgba(0,255,0,0.2); }
+  #debug { position: absolute; bottom: 40px; left: 10px; font-family: monospace; font-size: 11px; color: #666; pointer-events: none; max-width: 300px; white-space: nowrap; overflow: hidden; }
+  #controls { height: 32px; background: #252526; border-top: 1px solid #333; display: flex; align-items: center; padding: 0 10px; gap: 10px; font-size: 12px; }
+  .ctrl-btn { background: #333; border: 1px solid #444; color: #eee; cursor: pointer; padding: 3px 10px; border-radius: 3px; font-size: 12px; }
+  .ctrl-btn:hover { background: #444; border-color: #555; }
+</style>
+</head>
+<body>
+<div id="titlebar">
+  <div class="title-left">
+    <span>${titleText}</span>
+    <div class="help-icon">?
+      <div class="tooltip"><strong>支持的数据格式：</strong><br>1. 纯数字: <code>25.5</code><br>2. 多数据: <code>10, 20.5, 30</code><br>3. 键值对: <code>Temp:25.5</code></div>
+    </div>
+  </div>
+  <div class="win-controls">
+    <button class="win-btn" id="btnPin" title="置顶">📌</button>
+    <button class="win-btn close" id="btnClose" title="关闭">✕</button>
+  </div>
+</div>
+<div id="main">
+  <div id="info-overlay">Waiting for data...</div>
+  <div id="debug">Ready.</div>
+  <canvas id="c"></canvas>
+  <div id="controls">
+    <span style="color:#888">绘制点数: <span id="bufSize" style="color:#ccc">0</span></span>
+    <div style="flex:1"></div>
+    <button class="ctrl-btn" id="btnPause">⏯ 暂停/继续</button>
+    <button class="ctrl-btn" id="btnClear">🗑 清空</button>
+  </div>
+</div>
+<script>
+  document.getElementById('btnClose').onclick = () => window.close();
+  
+  const btnPin = document.getElementById('btnPin');
+  let isPinned = false;
+  btnPin.onclick = () => {
+      isPinned = !isPinned;
+      btnPin.classList.toggle('pinned', isPinned);
+      if (window.opener) {
+          window.opener.postMessage({ type: 'toggle-pin', val: isPinned }, '*');
+      }
+  };
+
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d');
+  const info = document.getElementById('info-overlay');
+  const debugEl = document.getElementById('debug');
+  const bufSize = document.getElementById('bufSize');
+  let data = [];
+  let paused = false;
+  const maxPoints = 1000;
+
+  function resize() {
+    canvas.width = canvas.clientWidth;
+    canvas.height = canvas.clientHeight;
+  }
+  window.addEventListener('resize', resize);
+  setTimeout(resize, 100);
+
+  document.getElementById('btnPause').onclick = () => { 
+      paused = !paused; 
+      document.getElementById('btnPause').style.background = paused ? '#500' : '';
+  };
+  document.getElementById('btnClear').onclick = () => { data = []; draw(); };
+
+  window.addEventListener('message', (event) => {
+    const msg = event.data;
+    if (msg === undefined || msg === null) return;
+    if (typeof msg === 'object' && msg.type === 'debug') {
+         debugEl.textContent = msg.text;
+         return;
+    }
+    const val = parseFloat(msg);
+    if(!isNaN(val) && !paused) {
+        data.push(val);
+        if (data.length > maxPoints) data.shift();
+        bufSize.textContent = data.length;
+    }
+  });
+
+  function draw() {
+    requestAnimationFrame(draw);
+    if (paused && data.length > 0) return; 
+    const w = canvas.width; const h = canvas.height;
+    ctx.fillStyle = '#1e1e1e'; ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = '#2d2d2d'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h/2); ctx.lineTo(w, h/2); ctx.stroke();
+
+    if (data.length < 2) return;
+    let min = Infinity, max = -Infinity;
+    for(let v of data) { if(v < min) min = v; if(v > max) max = v; }
+    if (min === max) { min -= 1; max += 1; }
+    const range = max - min; const padding = 30; const plotH = h - padding * 2;
+
+    ctx.strokeStyle = '#409EFF'; ctx.lineWidth = 2; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    for(let i = 0; i < data.length; i++) {
+        const x = (i / (data.length - 1)) * w;
+        const y = h - padding - ((data[i] - min) / range) * plotH;
+        if (i===0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    info.innerHTML = \`<span style="color:#aaa">MAX:</span> \${max.toFixed(2)}<br><span style="color:#aaa">MIN:</span> \${min.toFixed(2)}<br><span style="color:#fff;font-weight:bold">NOW:</span> \${data[data.length-1].toFixed(2)}\`;
+  }
+  draw();
+</script>
+</body>
+</html>
+    `);
+    doc.close();
+}
+
+if (btnShowWave) {
+    btnShowWave.addEventListener('click', openWaveWindow);
+}
+
+function feedWaveData(id, text) {
+    if (!waveWin || waveWin.closed) return;
+
+    waveWin.postMessage({
+        type: 'debug',
+        text: `[${id}] ${text.replace(/[\\r\\n]/g, ' ').substring(0, 60)}`
+    }, '*');
+
+    const matches = text.match(/-?\d+(\.\d+)?/g);
+    if (matches) {
+        matches.forEach(m => {
+            waveWin.postMessage(parseFloat(m), '*');
+        });
+    }
+}
+
+window.addEventListener('message', (event) => {
+    if (!event.data || typeof event.data !== 'object') return;
+
+    if (event.data.type === 'toggle-pin') {
+        const shouldPin = event.data.val;
+        if (window.api && window.api.window && window.api.window.setOscilloscopeTop) {
+            window.api.window.setOscilloscopeTop(shouldPin);
+        }
+    }
+});
 
 (async function init() {
     if (settings.fullscreen) window.api?.window?.setFullscreen(true);
@@ -4093,6 +4354,138 @@ function updateAboutBadge() {
         }
     } catch (e) { console.error('获取版本失败', e); }
 
+    (function initContextMenu() {
+        const menu = document.createElement('div');
+        menu.className = 'ctx-menu';
+        menu.id = 'paneCtxMenu';
+        document.body.appendChild(menu);
+
+        let currentPaneId = null;
+
+        window.addEventListener('pointerdown', (e) => {
+            if (!e.target.closest('.ctx-menu')) {
+                menu.classList.remove('visible');
+            }
+        }, true);
+        window.addEventListener('resize', () => menu.classList.remove('visible'));
+        window.addEventListener('blur', () => menu.classList.remove('visible'));
+
+        document.addEventListener('contextmenu', (e) => {
+            const paneEl = e.target.closest('.pane');
+            if (!paneEl) {
+                menu.classList.remove('visible');
+                return;
+            }
+
+            e.preventDefault();
+            const body = paneEl.querySelector('.body');
+            currentPaneId = body ? body.dataset.id : null;
+            if (!currentPaneId) return;
+
+            setActive(currentPaneId);
+
+            const pane = state.panes.get(currentPaneId);
+            if (!pane) return;
+
+            const selection = window.getSelection().toString();
+            const hasSelection = selection && selection.length > 0;
+            const isOpen = pane.open;
+            const toggleText = isOpen ? (pane.type === 'tcp' ? '关闭连接' : '关闭串口') : (pane.type === 'tcp' ? '打开连接' : '打开串口');
+
+            menu.innerHTML = '';
+
+            const addItem = (text, onClick) => {
+                const item = document.createElement('div');
+                item.className = 'ctx-item';
+                item.textContent = text;
+                item.onpointerdown = (evt) => {
+                    evt.stopPropagation();
+                    menu.classList.remove('visible');
+                    onClick();
+                };
+                menu.appendChild(item);
+            };
+
+            const addSeparator = () => {
+                const sep = document.createElement('div');
+                sep.className = 'ctx-separator';
+                menu.appendChild(sep);
+            };
+
+            if (hasSelection) {
+                addItem('复制选中内容', () => {
+                    navigator.clipboard.writeText(selection);
+                });
+            } else {
+                addItem('保存面板数据', () => {
+                    btnSaveLog.click();
+                });
+            }
+
+            addSeparator();
+
+            addItem('隐藏面板', () => {
+                const btn = pane.el.querySelector('.btnHide');
+                if (btn) btn.click();
+            });
+
+            addItem(toggleText, () => {
+                const btn = pane.el.querySelector('.btnToggle');
+                if (btn) btn.click();
+            });
+
+            addItem('弹出面板', () => {
+                const btn = pane.el.querySelector('.btnPop');
+                if (btn) btn.click();
+            });
+
+            addItem('清空面板', async () => {
+                const ok = await uiConfirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`, { danger: true, okText: '清空' });
+                if (!ok) return;
+                const b = pane.el.querySelector('.body');
+                if (b) b.innerHTML = '';
+                pane.logs = [];
+                pane.chunks = [];
+                pane.textBuffer = '';
+                pane.hexBuffer = '';
+                pane.bodyTextNode = null;
+                pane.tailTextNode = null;
+            });
+
+            addItem('删除面板', async () => {
+                const ok = await uiConfirm(`确定删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
+                if (!ok) return;
+                pane.el.remove();
+                state.panes.delete(currentPaneId);
+                window.api.config.save(exportPanelsConfig());
+                if (state.activeId === currentPaneId) setActive(null);
+                refreshPanelList();
+            });
+
+            addSeparator();
+
+            addItem('更改面板名称', () => {
+                btnAddNote.click();
+            });
+
+            addItem('打开示波器', () => {
+                openWaveWindow();
+            });
+
+            const winW = window.innerWidth;
+            const winH = window.innerHeight;
+            let x = e.clientX;
+            let y = e.clientY;
+
+            if (x + 180 > winW) x = winW - 185;
+            if (y + 300 > winH) y = winH - 300;
+
+            menu.style.left = x + 'px';
+            menu.style.top = y + 'px';
+            menu.classList.add('visible');
+        });
+    })();
+
     updateDeleteSelectedBtn();
 
 })();
@@ -4134,18 +4527,259 @@ if (dlgChangelog) {
     dlgChangelog.addEventListener('click', (e) => {
         if (e.target === dlgChangelog) dlgChangelog.close();
     });
-    
+
     dlgChangelog.addEventListener('close', () => {
-        forceUnlockUI({ closeDialogs: false }); 
+        forceUnlockUI({ closeDialogs: false });
     });
 }
 
 if (window.api && window.api.changelog && window.api.changelog.onLoad) {
     window.api.changelog.onLoad((text) => {
-        if(changelogContent) {
+        if (changelogContent) {
             changelogContent.innerHTML = parseChangelogMarkdown(text);
             forceUnlockUI({ closeDialogs: false });
-            try { dlgChangelog.showModal(); } catch(e) { console.error(e); }
+            try { dlgChangelog.showModal(); } catch (e) { console.error(e); }
         }
     });
+}
+
+// 文件协议传输
+const CRC_TABLE = [
+    0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
+    0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
+    0x1231, 0x0210, 0x3273, 0x2252, 0x52b5, 0x4294, 0x72f7, 0x62d6,
+    0x9339, 0x8318, 0xb37b, 0xa35a, 0xd3bd, 0xc39c, 0xf3ff, 0xe3de,
+    0x2462, 0x3443, 0x0420, 0x1401, 0x64e6, 0x74c7, 0x44a4, 0x5485,
+    0xa56a, 0xb54b, 0x8528, 0x9509, 0xe5ee, 0xf5cf, 0xc5ac, 0xd58d,
+    0x3653, 0x2672, 0x1611, 0x0630, 0x76d7, 0x66f6, 0x5695, 0x46b4,
+    0xb75b, 0xa77a, 0x9719, 0x8738, 0xf7df, 0xe7fe, 0xd79d, 0xc7bc,
+    0x48c4, 0x58e5, 0x6886, 0x78a7, 0x0840, 0x1861, 0x2802, 0x3823,
+    0xc9cc, 0xd9ed, 0xe98e, 0xf9af, 0x8948, 0x9969, 0xa90a, 0xb92b,
+    0x5af5, 0x4ad4, 0x7ab7, 0x6a96, 0x1a71, 0x0a50, 0x3a33, 0x2a12,
+    0xdbfd, 0xcbdc, 0xfbbf, 0xeb9e, 0x9b79, 0x8b58, 0xbb3b, 0xab1a,
+    0x6ca6, 0x7c87, 0x4ce4, 0x5cc5, 0x2c22, 0x3c03, 0x0c60, 0x1c41,
+    0xedae, 0xfd8f, 0xcdec, 0xddcd, 0xad2a, 0xbd0b, 0x8d68, 0x9d49,
+    0x7e97, 0x6eb6, 0x5ed5, 0x4ef4, 0x3e13, 0x2e32, 0x1e51, 0x0e70,
+    0xff9f, 0xefbe, 0xdfdd, 0xcffc, 0xbf1b, 0xaf3a, 0x9f59, 0x8f78,
+    0x9188, 0x81a9, 0xb1ca, 0xa1eb, 0xd10c, 0xc12d, 0xf14e, 0xe16f,
+    0x1080, 0x00a1, 0x30c2, 0x20e3, 0x5004, 0x4025, 0x7046, 0x6067,
+    0x83b9, 0x9398, 0xa3fb, 0xb3da, 0xc33d, 0xd31c, 0xe37f, 0xf35e,
+    0x02b1, 0x1290, 0x22f3, 0x32d2, 0x4235, 0x5214, 0x6277, 0x7256,
+    0xb5ea, 0xa5cb, 0x95a8, 0x8589, 0xf56e, 0xe54f, 0xd52c, 0xc50d,
+    0x34e2, 0x24c3, 0x14a0, 0x0481, 0x7466, 0x6447, 0x5424, 0x4405,
+    0xa7db, 0xb7fa, 0x8799, 0x97b8, 0xe75f, 0xf77e, 0xc71d, 0xd73c,
+    0x26d3, 0x36f2, 0x0691, 0x16b0, 0x6657, 0x7676, 0x4615, 0x5634,
+    0xd94c, 0xc96d, 0xf90e, 0xe92f, 0x99c8, 0x89e9, 0xb98a, 0xa9ab,
+    0x5844, 0x4865, 0x7806, 0x6827, 0x18c0, 0x08e1, 0x3882, 0x28a3,
+    0xcb7d, 0xdb5c, 0xeb3f, 0xfb1e, 0x8bf9, 0x9bd8, 0xabbb, 0xbb9a,
+    0x4a75, 0x5a54, 0x6a37, 0x7a16, 0x0af1, 0x1ad0, 0x2ab3, 0x3a92,
+    0xfd2e, 0xed0f, 0xdd6c, 0xcd4d, 0xbdaa, 0xad8b, 0x9de8, 0x8dc9,
+    0x7c26, 0x6c07, 0x5c64, 0x4c45, 0x3ca2, 0x2c83, 0x1ce0, 0x0cc1,
+    0xef1f, 0xff3e, 0xcf5d, 0xdf7c, 0xaf9b, 0xbfba, 0x8fd9, 0x9ff8,
+    0x6e17, 0x7e36, 0x4e55, 0x5e74, 0x2e93, 0x3eb2, 0x0ed1, 0x1ef0
+];
+
+function calcCRC16(buffer) {
+    let crc = 0x0000;
+    for (let i = 0; i < buffer.length; i++) {
+        const byte = buffer[i];
+        const index = ((crc >>> 8) ^ byte) & 0xFF;
+        crc = ((crc << 8) ^ CRC_TABLE[index]) & 0xFFFF;
+    }
+    return crc;
+}
+
+const YM_SOH = 0x01;
+const YM_STX = 0x02;
+const YM_EOT = 0x04;
+const YM_ACK = 0x06;
+const YM_NAK = 0x15;
+const YM_CAN = 0x18;
+const YM_CNC = 0x43;
+
+class YModemSender {
+    constructor(id, protocol = 'ymodem', logger = () => { }) {
+        this.id = id;
+        this.protocol = protocol.toLowerCase();
+        this.logger = logger;
+        this.resolveWait = null;
+        this.rejectWait = null;
+        this.rxBuffer = [];
+        this.targetBytes = [];
+    }
+
+    onData(bytes) {
+        for (let i = 0; i < bytes.length; i++) {
+            this.rxBuffer.push(bytes[i]);
+        }
+        if (this.resolveWait) this.checkWait();
+    }
+
+    checkWait() {
+        while (this.rxBuffer.length > 0) {
+            if (!this.resolveWait) return;
+            const byte = this.rxBuffer.shift();
+            if (this.targetBytes.includes(byte)) {
+                const resolver = this.resolveWait;
+                this.cleanupWait();
+                if (resolver) resolver(byte);
+                return;
+            } else {
+            }
+        }
+    }
+
+    waitFor(byteCodes, timeoutMs = 60000) {
+        return new Promise((resolve, reject) => {
+            this.resolveWait = resolve;
+            this.rejectWait = reject;
+            this.targetBytes = Array.isArray(byteCodes) ? byteCodes : [byteCodes];
+
+            this.checkWait();
+
+            this.timer = setTimeout(() => {
+                const targets = this.targetBytes.map(b => '0x' + b.toString(16)).join(',');
+                this.cleanupWait();
+                reject(new Error(`等待超时 (期望: ${targets})`));
+            }, timeoutMs);
+        });
+    }
+
+    cleanupWait() {
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = null;
+        this.resolveWait = null;
+        this.rejectWait = null;
+        this.targetBytes = [];
+    }
+
+    async write(data) {
+        const hex = Array.from(data).map(b => b.toString(16).padStart(2, '0')).join('');
+
+        const timeoutPromise = new Promise((_, reject) =>
+            setTimeout(() => reject(new Error('写入超时')), 5000)
+        );
+
+        try {
+            const writePromise = window.api.serial.write(this.id, hex, 'hex');
+            const res = await Promise.race([writePromise, timeoutPromise]);
+            if (!res.ok) throw new Error(res.error || 'Write Failed');
+        } catch (e) {
+            this.logger(`[Error] 写入失败: ${e.message}`);
+            throw e;
+        }
+    }
+
+    async start(fileBytes, fileName) {
+        try {
+            this.logger(`准备传输: ${fileName} (${fileBytes.length} 字节)`);
+
+            await this.waitFor(YM_CNC, 60000);
+
+            if (this.protocol === 'ymodem') {
+                await this.sendBlock0(fileName, fileBytes.length);
+
+                await this.waitFor(YM_ACK);
+                await this.waitFor(YM_CNC);
+            }
+
+            let seq = 1;
+            let offset = 0;
+            const total = fileBytes.length;
+
+            this.logger('开始发送数据...');
+
+            while (offset < total) {
+                let size = 1024;
+                let chunk = fileBytes.slice(offset, offset + size);
+
+                if (chunk.length < size) {
+                    const pad = new Uint8Array(size);
+                    pad.set(chunk);
+                    pad.fill(0x1A, chunk.length);
+                    chunk = pad;
+                }
+
+                await this.sendPacket(seq, chunk);
+
+                try {
+                    await this.waitFor(YM_ACK);
+                    offset += size;
+
+                    const progress = Math.min(100, Math.round((offset / total) * 100));
+                    if (seq % 5 === 0 || offset >= total) {
+                        this.logger(`进度: ${progress}%`);
+                    }
+                    seq++;
+                } catch (e) {
+                    this.logger(`包 ${seq} 超时，正在重试...`);
+                }
+            }
+
+            this.logger('发送结束信号...');
+            await this.write(new Uint8Array([YM_EOT]));
+
+            try {
+                const resp = await this.waitFor([YM_ACK, YM_NAK]);
+                if (resp === YM_NAK) {
+                    await this.write(new Uint8Array([YM_EOT]));
+                    await this.waitFor(YM_ACK);
+                }
+            } catch (e) {
+            }
+
+            if (this.protocol === 'ymodem') {
+                await this.waitFor(YM_CNC);
+                await this.sendBlock0('', 0);
+                await this.waitFor(YM_ACK);
+            }
+
+            this.logger('传输完成！✅');
+
+        } catch (err) {
+            this.logger(`[Stop] 传输中止: ${err.message}`);
+            try { await this.write(new Uint8Array([YM_CAN, YM_CAN, YM_CAN, YM_CAN, YM_CAN])); } catch { }
+        } finally {
+            activeTransfer = null;
+        }
+    }
+
+    async sendBlock0(name, size) {
+        const payload = new Uint8Array(128);
+        if (name) {
+            const encoder = new TextEncoder();
+            const nameBytes = encoder.encode(name);
+            const maxLen = 100;
+            if (nameBytes.length > maxLen) {
+                payload.set(nameBytes.slice(0, maxLen), 0);
+            } else {
+                payload.set(nameBytes, 0);
+            }
+            let p = nameBytes.length + 1;
+            if (p < 120) {
+                const sizeStr = size.toString() + ' ';
+                const sizeBytes = encoder.encode(sizeStr);
+                payload.set(sizeBytes, p);
+            }
+        }
+        await this.sendPacket(0, payload, 128);
+    }
+
+    async sendPacket(seq, data, forceSize = null) {
+        const size = forceSize || data.length;
+        const head = (size === 1024) ? YM_STX : YM_SOH;
+        const seqByte = seq & 0xFF;
+        const seqComp = (~seq) & 0xFF;
+
+        const header = new Uint8Array([head, seqByte, seqComp]);
+        const crc = calcCRC16(data);
+        const crcBytes = new Uint8Array([(crc >> 8) & 0xFF, crc & 0xFF]);
+
+        const packet = new Uint8Array(header.length + data.length + crcBytes.length);
+        packet.set(header, 0);
+        packet.set(data, header.length);
+        packet.set(crcBytes, header.length + data.length);
+
+        await this.write(packet);
+    }
 }

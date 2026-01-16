@@ -516,9 +516,9 @@ ipcMain.on('changelog:request', (event) => {
 });
 ipcMain.on('app:checkUpdate', () => checkForUpdates(true));
 ipcMain.on('panel:request-hide', (_e, { id }) => {
-    mainWindow?.webContents.send('panel:hide', { id });
-    const win = BrowserWindow.fromWebContents(_e.sender);
-    win?.close();
+  mainWindow?.webContents.send('panel:hide', { id });
+  const win = BrowserWindow.fromWebContents(_e.sender);
+  win?.close();
 });
 ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
   const { canceled, filePath } = await dialog.showSaveDialog({ title: '保存面板数据', defaultPath: `${name || 'panel'}.txt`, filters: [{ name: '文本文件', extensions: ['txt'] }] });
@@ -527,28 +527,28 @@ ipcMain.handle('panel:saveLog', async (_e, { name, content }) => {
 });
 ipcMain.handle('panel:popout', (_e, { id, title, historyStr, alwaysOnTop, isOpen, viewMode, optionsStr }) => {
   if (!mainWindow) return { ok: false, error: 'MAIN_WINDOW_MISSING' };
-  
-  const win = new BrowserWindow({ 
-    width: 600, 
-    height: 420, 
+
+  const win = new BrowserWindow({
+    width: 600,
+    height: 420,
     minWidth: 550,
     minHeight: 300,
     alwaysOnTop: alwaysOnTop !== false,
-    frame: false, 
-    resizable: true, 
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true } 
+    frame: false,
+    resizable: true,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
   });
-  
-  win.loadFile('panel.html', { 
-    query: { 
-        id, 
-        title, 
-        isOpen: isOpen ? '1' : '0', 
-        viewMode: viewMode || 'text',
-        opts: optionsStr || '{}' 
-    } 
+
+  win.loadFile('panel.html', {
+    query: {
+      id,
+      title,
+      isOpen: isOpen ? '1' : '0',
+      viewMode: viewMode || 'text',
+      opts: optionsStr || '{}'
+    }
   });
-  
+
   win.webContents.once('did-finish-load', () => win.webContents.send('panel:loadContent', { id, historyStr }));
   win.on('focus', () => mainWindow?.webContents.send('panel:focus', { id }));
   return { ok: true };
@@ -578,9 +578,43 @@ ipcMain.handle('scripts:stop', (_e, { runId }) => { const t = runningScripts.get
 
 app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
 setTimeout(checkForUpdates, 3000);
+
+ipcMain.on('window:set-oscilloscope-top', (event, { flag }) => {
+  const wins = BrowserWindow.getAllWindows();
+  const child = wins.find(w => {
+    const title = w.getTitle();
+    return title && title.startsWith('示波器');
+  });
+  
+  if (child) {
+    child.setAlwaysOnTop(flag);
+    child.setVisibleOnAllWorkspaces(flag, { visibleOnFullScreen: flag });
+  }
+});
+
+app.on('web-contents-created', (event, contents) => {
+  contents.setWindowOpenHandler(({ frameName }) => {
+    if (frameName === 'SerialWave') {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          frame: false,
+          transparent: true,
+          autoHideMenuBar: true,
+          backgroundColor: '#00000000',
+          webPreferences: {
+            preload: path.join(__dirname, 'preload.js'),
+            contextIsolation: true,
+            nodeIntegration: false
+          }
+        }
+      };
+    }
+    return { action: 'allow' };
+  });
+});
 app.on('window-all-closed', () => { ports.forEach(({ port }) => { try { port.close(); } catch { } }); if (process.platform !== 'darwin') app.quit(); });
 
-// 自动检测更新
 const UPDATE_URL = 'https://filebox.satone1008.cn/';
 const FILE_PREFIX = '串口助手-';
 const FILE_SUFFIX = '-win-x64.exe';
@@ -599,14 +633,14 @@ function versionCompare(v1, v2) {
 
 function checkForUpdates(isManual = false) {
   console.log('[Updater] Checking for updates...');
-  
+
   const req = https.get(UPDATE_URL, (res) => {
     let data = '';
     res.on('data', (chunk) => data += chunk);
     res.on('end', () => {
       const verRegex = new RegExp(escapeRegExp(FILE_PREFIX) + '(\\d+\\.\\d+\\.\\d+)' + escapeRegExp(FILE_SUFFIX));
       const linkRegex = /href\s*=\s*["']([^"']+)["']/gi;
-      
+
       let match;
       let latestVer = '0.0.0';
       let latestDownloadUrl = '';
@@ -622,7 +656,7 @@ function checkForUpdates(isManual = false) {
           const foundVer = fileMatch[1];
           if (versionCompare(foundVer, latestVer) > 0) {
             latestVer = foundVer;
-            try { latestDownloadUrl = new URL(href, UPDATE_URL).href; } 
+            try { latestDownloadUrl = new URL(href, UPDATE_URL).href; }
             catch (e) { console.error('[Updater] Invalid URL:', href); }
           }
         }
@@ -675,11 +709,11 @@ function downloadUpdate(fileUrl, savePath, version) {
   console.log(`[Updater] Downloading to: ${savePath}`);
 
   const file = fs.createWriteStream(savePath);
-  
+
   const request = https.get(encodedUrl, (response) => {
     if (response.statusCode === 301 || response.statusCode === 302) {
       file.close();
-      fs.unlink(savePath, () => {});
+      fs.unlink(savePath, () => { });
       if (response.headers.location) {
         downloadUpdate(response.headers.location, savePath, version);
       } else {
@@ -690,7 +724,7 @@ function downloadUpdate(fileUrl, savePath, version) {
 
     if (response.statusCode !== 200) {
       file.close();
-      fs.unlink(savePath, () => {});
+      fs.unlink(savePath, () => { });
       dialog.showErrorBox('更新失败', `HTTP 状态码: ${response.statusCode}`);
       if (mainWindow) mainWindow.setProgressBar(-1);
       return;
@@ -730,12 +764,12 @@ function promptToInstall(version, filePath) {
 
 function runInstallerAndQuit(filePath) {
   console.log('[Updater] Spawning installer, deleting file on finish, and relaunching...');
-  
+
   const targetAppPath = app.getPath('exe');
   const installCmd = `start /wait "" "${filePath}" /S`;
   const deleteCmd = `del /f /q "${filePath}"`;
   const relaunchCmd = `start "" "${targetAppPath}"`;
-  
+
   const fullCommand = `${installCmd} & ${deleteCmd} & ${relaunchCmd}`;
 
   try {
@@ -748,7 +782,7 @@ function runInstallerAndQuit(filePath) {
     subprocess.unref();
 
     setTimeout(() => {
-      app.quit(); 
+      app.quit();
     }, 500);
 
   } catch (e) {
