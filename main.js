@@ -18,6 +18,17 @@ const commandsPath = path.join(app.getPath('userData'), 'commands.json');
 const scriptsDir = path.join(app.getPath('userData'), 'scripts');
 
 // ========== 工具 ==========
+function writeGeneric(id, data, mode, append) {
+  if (id.startsWith('tcp://')) {
+    const entry = sockets.get(id);
+    if (!entry || !entry.socket) return Promise.resolve({ ok: false, error: 'NOT_OPEN' });
+    let buf;
+    try { buf = buildWriteBuffer(data, mode, append); } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
+    return new Promise(res => entry.socket.write(buf, err => res(err ? { ok: false, error: err.message } : { ok: true, bytes: buf.length })));
+  } else {
+    return writeToSerial(id, data, mode, append);
+  }
+}
 function shouldSuppressPortError(entry, err) {
   if (!entry) return true;
   if (entry.suppressErrorUntil && Date.now() < entry.suppressErrorUntil) return true;
@@ -56,7 +67,7 @@ function createMainWindow() {
     autoHideMenuBar: true,
     titleBarStyle: process.platform === 'win32' ? 'hidden' : undefined,
     titleBarOverlay: process.platform === 'win32' ? { color: '#f5f7fa', symbolColor: '#1f2937', height: 30 } : undefined,
-    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true }
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, webviewTag: true }
   });
   mainWindow.loadFile('index.html');
   mainWindow.on('closed', () => {
@@ -70,27 +81,21 @@ function createMainWindow() {
 
 const net = require('net');
 
-// 串口 → TCP 共享：每个串口面板一个实例
-// key = portId（就是串口 path），value = { server, port, clients:Set<Socket>, onSerialData }
 const shares = new Map();
 
 function isRfc1918(ip) {
-  // 10/8
   if (/^10\./.test(ip)) return true;
-  // 172.16 - 172.31
   const m172 = ip.match(/^172\.(\d+)\./);
   if (m172) {
     const n = parseInt(m172[1], 10);
     if (n >= 16 && n <= 31) return true;
   }
-  // 192.168/16
   if (/^192\.168\./.test(ip)) return true;
   return false;
 }
 
 function looksVirtual(ifname = '') {
   const n = (ifname || '').toLowerCase();
-  // 尽量避开常见虚拟/隧道/抓包适配器
   return /(vmnet|vmware|virtualbox|vbox|hyper[- ]?v|wsl|docker|hamachi|zerotier|bridge|npcap|npf|tap|tun|loopback)/i.test(n);
 }
 
@@ -110,13 +115,9 @@ function listLanIPv4() {
         score: 0,
         virt: looksVirtual(name)
       };
-
-      // 打分：优先 RFC1918；其次 CGNAT（100.64/10）；再其它
       if (isRfc1918(ip)) entry.score += 100;
-      else if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) entry.score += 20; // CGNAT
+      else if (/^100\.(6[4-9]|[7-9]\d|1[01]\d|12[0-7])\./.test(ip)) entry.score += 20;
       else entry.score += 5;
-
-      // 虚拟网卡降权
       if (entry.virt) entry.score -= 50;
 
       all.push(entry);
@@ -124,13 +125,10 @@ function listLanIPv4() {
   }
 
   if (!all.length) return ['127.0.0.1'];
-
-  // 只要有 RFC1918，就过滤掉非 RFC1918
   const hasPrivate = all.some(a => isRfc1918(a.ip) && !a.virt);
   const cand = hasPrivate ? all.filter(a => isRfc1918(a.ip)) : all;
 
   cand.sort((a, b) => b.score - a.score);
-  // 返回“最佳一个在最前”，其余备选在后
   return cand.map(a => a.ip);
 }
 
@@ -140,7 +138,7 @@ const TCP_DEFAULTS = {
   keepAlive: true,
   keepAliveSec: 60,
   noDelay: true,
-  autoReconnect: false,   // 先默认关闭；要开的话把这里改成 true
+  autoReconnect: false,
   reconnectMs: 2000
 };
 
@@ -558,23 +556,95 @@ ipcMain.on('panel:request-dock', (_e, { id, html }) => mainWindow?.webContents.s
 ipcMain.handle('scripts:dir', () => scriptsDir);
 ipcMain.handle('scripts:list', () => { ensureScriptsDir(); return fs.readdirSync(scriptsDir).filter(f => f.endsWith('.js')); });
 ipcMain.handle('scripts:read', (_e, n) => { const f = path.join(scriptsDir, safeScriptName(n)); return fs.existsSync(f) ? fs.readFileSync(f, 'utf-8') : ''; });
-ipcMain.handle('scripts:write', (_e, { name, content }) => { fs.writeFileSync(path.join(scriptsDir, safeScriptName(name)), String(content ?? ''), 'utf-8'); return { ok: true }; });
-ipcMain.handle('scripts:delete', (_e, n) => { const f = path.join(scriptsDir, safeScriptName(n)); if (fs.existsSync(f)) fs.unlinkSync(f); return { ok: true }; });
+ipcMain.handle('scripts:write', (_e, { name, content }) => { 
+    ensureScriptsDir();
+    try {
+        fs.writeFileSync(path.join(scriptsDir, safeScriptName(name)), String(content ?? ''), 'utf-8'); 
+        return { ok: true }; 
+    } catch (e) {
+        console.error('Script save failed:', e);
+        return { ok: false, error: e.message };
+    }
+});ipcMain.handle('scripts:delete', (_e, n) => { const f = path.join(scriptsDir, safeScriptName(n)); if (fs.existsSync(f)) fs.unlinkSync(f); return { ok: true }; });
 ipcMain.handle('scripts:run', (e, { code, ctx }) => {
-  const runId = randomUUID(); const logs = []; const token = { aborted: false, timers: new Set() }; runningScripts.set(runId, token);
+  const runId = randomUUID(); 
+  const logs = []; 
+  const token = { 
+      aborted: false, 
+      abortHandlers: new Set() 
+  }; 
+  runningScripts.set(runId, token);
+
   const sandbox = {
-    console: { log: (...a) => logs.push(a.join(' ')) }, sleep: ms => new Promise((r, j) => { const t = setTimeout(() => token.aborted ? j(new Error('ABORTED')) : r(), Number(ms) || 0); token.timers.add(t); }),
-    send: async (d, m = 'text', a = 'none') => { if (token.aborted) throw new Error('ABORTED'); const r = await writeToSerial(ctx.id, d, m, a); if (!r.ok) throw new Error(r.error); return r; },
-    onData: h => typeof h === 'function' && addScriptWatcher(ctx.id, runId, h), shouldStop: () => token.aborted
+    console: { log: (...a) => logs.push(a.join(' ')) },
+    checkStop: async () => {
+        if (token.aborted) throw new Error('ABORTED');
+        return false; 
+    },
+    sleep: ms => new Promise((resolve, reject) => {
+        if (token.aborted) return reject(new Error('ABORTED'));
+        let timer;
+        const stopNow = () => { clearTimeout(timer); reject(new Error('ABORTED')); };
+        token.abortHandlers.add(stopNow);
+        timer = setTimeout(() => {
+            token.abortHandlers.delete(stopNow);
+            resolve();
+        }, Number(ms) || 0); 
+    }),
+    waitOnePacket: () => new Promise((resolve, reject) => {
+        if (token.aborted) return reject(new Error('ABORTED'));
+        let onDataHandler;
+        const stopNow = () => {
+             removeScriptWatcher(runId);
+             reject(new Error('ABORTED'));
+        };
+        token.abortHandlers.add(stopNow);
+        onDataHandler = (payload) => {
+             token.abortHandlers.delete(stopNow);
+             removeScriptWatcher(runId);
+             const txt = (typeof payload === 'string') ? payload : 
+                        (payload.text ? payload.text : '');
+             resolve(txt);
+        };
+        addScriptWatcher(ctx.id, runId, onDataHandler);
+    }),
+
+    send: async (d, m = 'text', a = 'none') => { 
+        if (token.aborted) throw new Error('ABORTED'); 
+        const r = await writeGeneric(ctx.id, d, m, a); 
+        if (!r.ok) throw new Error(r.error); 
+        return r; 
+    }
   };
+
   (async () => {
-    try { await new vm.Script(`(async()=>{${code || ''}})()`).runInContext(vm.createContext(sandbox)); e.sender.send('scripts:ended', { runId, ok: true, logs }); }
-    catch (err) { logs.push('[ERROR] ' + (err?.message || String(err))); e.sender.send('scripts:ended', { runId, ok: false, error: err?.message, logs }); }
-    finally { token.timers.forEach(clearTimeout); runningScripts.delete(runId); removeScriptWatcher(runId); }
+    try { 
+        await new vm.Script(`(async()=>{${code || ''}})()`).runInContext(vm.createContext(sandbox)); 
+        e.sender.send('scripts:ended', { runId, ok: true, logs }); 
+    }
+    catch (err) { 
+        if (err.message !== 'ABORTED') {
+            logs.push('[ERROR] ' + (err?.message || String(err))); 
+        }
+        e.sender.send('scripts:ended', { runId, ok: false, error: err?.message, logs }); 
+    }
+    finally { 
+        runningScripts.delete(runId); 
+        removeScriptWatcher(runId); 
+    }
   })();
   return { ok: true, runId };
 });
-ipcMain.handle('scripts:stop', (_e, { runId }) => { const t = runningScripts.get(runId); if (!t) return { ok: false, error: 'NOT_RUNNING' }; t.aborted = true; removeScriptWatcher(runId); return { ok: true }; });
+
+ipcMain.handle('scripts:stop', (e, { runId }) => {
+  const token = runningScripts.get(runId);
+  if (token) {
+    token.aborted = true;
+    token.abortHandlers.forEach(rejectFunc => rejectFunc());
+    token.abortHandlers.clear();
+  }
+  return { ok: true };
+});
 
 app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
 setTimeout(checkForUpdates, 3000);
@@ -585,7 +655,7 @@ ipcMain.on('window:set-oscilloscope-top', (event, { flag }) => {
     const title = w.getTitle();
     return title && title.startsWith('示波器');
   });
-  
+
   if (child) {
     child.setAlwaysOnTop(flag);
     child.setVisibleOnAllWorkspaces(flag, { visibleOnFullScreen: flag });

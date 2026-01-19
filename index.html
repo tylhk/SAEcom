@@ -118,7 +118,7 @@
                                 <button id="cmdNext" title="下一页">▶</button>
                             </div>
                             <button id="cmdEditPage">编辑命令</button>
-                            <button id="openScript">脚本发送</button>
+                            <button id="openScript">编辑脚本</button>
                             <div class="repeat">
                                 <label><input type="checkbox" id="cmdRepeat"> 定时发送</label>
                             </div>
@@ -265,100 +265,156 @@
             </div>
         </dialog>
 
-        <dialog id="dlgScript">
-            <h3>脚本页</h3>
-            <div class="script-layout">
-                <textarea id="scriptEditor" placeholder="在此编写脚本（.js）" spellcheck="false"></textarea>
+        <dialog id="dlgScript" class="dlg-visual-script">
+            <div class="vs-header">
+                <div class="vs-header-left">
+                    <h3>脚本页</h3>
+                    <span class="vs-panel-badge">当前面板: <b id="currentPanelLabel" style="color:#E6A23C">--</b></span>
+                </div>
+                <div class="vs-actions">
+                    <span id="currentScriptName" style="color:#909399;font-size:12px;margin-right:10px;">（未选中）</span>
+                    <button id="btnScriptNew">新建</button>
+                    <button id="btnScriptSave">保存</button>
+                    <button id="btnScriptDelete" class="danger">删除</button>
+                    <div class="vs-sep"></div>
+                    <button id="btnScriptRun" class="primary">▶ 运行</button>
+                    <button id="btnScriptStop" class="danger" disabled>⏹ 停止</button>
+                    <button id="btnScriptClose">关闭</button>
+                </div>
+            </div>
 
-                <div class="script-side">
-                    <div class="script-row">
-                        <button id="btnScriptNew">创建脚本</button>
-                        <button id="btnScriptSave">保存脚本</button>
-                        <button id="btnScriptDelete">删除脚本</button>
+            <div class="vs-container">
+                <div class="vs-sidebar">
+                    <div class="vs-toolbox-category">基础功能</div>
+
+                    <div class="vs-block-template" draggable="true" data-type="send">
+                        <div class="vs-tpl-content"><span class="icon">📤</span> 发送数据(Send)</div>
+                        <span class="vs-tpl-help" data-real-desc="向当前串口发送数据。支持文本/HEX，可自动加换行符。">?</span>
                     </div>
-                    <div class="hint">当前文件：<span id="currentScriptName">（未选中）</span></div>
-                    <div class="script-list-wrap">
-                        <div class="hint">脚本目录：<span id="scriptDirHint"></span></div>
-                        <ul id="scriptList"></ul>
+
+                    <div class="vs-block-template" draggable="true" data-type="delay">
+                        <div class="vs-tpl-content"><span class="icon">⏱</span> 延时等待(Delay)</div>
+                        <span class="vs-tpl-help" data-real-desc="暂停脚本一段时间（毫秒）。仅暂停脚本，不会影响串口本身接收数据。">?</span>
                     </div>
-                    <div style="flex:1"></div>
-                    <div class="script-actions">
-                        <button id="btnScriptRun">运行脚本</button>
-                        <button id="btnScriptStop" disabled>停止运行</button>
-                        <button id="btnScriptClose">关闭</button>
+
+                    <div class="vs-block-template" draggable="true" data-type="comment">
+                        <div class="vs-tpl-content"><span class="icon">📝</span> 备注说明</div>
+                        <span class="vs-tpl-help" data-real-desc="添加一段注释文字，仅作为标记使用。">?</span>
                     </div>
+
+                    <div class="vs-toolbox-category">逻辑控制</div>
+
+                    <div class="vs-block-template" draggable="true" data-type="loop">
+                        <div class="vs-tpl-content"><span class="icon">🔁</span> 循环执行(For)</div>
+                        <span class="vs-tpl-help" data-real-desc="重复执行内部模块。次数设为0表示无限循环。">?</span>
+                    </div>
+
+                    <div class="vs-block-template" draggable="true" data-type="if_contains">
+                        <div class="vs-tpl-content"><span class="icon">❓</span> 条件判断(If)</div>
+                        <span class="vs-tpl-help" data-real-desc="脚本运行到此处会暂停，直到下一次串口接收到数据。数据中匹配到相同字符串则视为匹配成功。">?</span>
+                    </div>
+                </div>
+
+                <div class="vs-canvas-wrapper">
+                    <div id="vsCanvas" class="vs-canvas root-dropzone">
+                        <div class="vs-placeholder">从左侧拖拽模块到此处</div>
+                    </div>
+                </div>
+
+                <div class="vs-list-sidebar">
+                    <div class="hint">脚本列表</div>
+                    <ul id="scriptList"></ul>
                 </div>
             </div>
         </dialog>
 
-        <dialog id="dlgScriptName">
-            <h4>新建脚本</h4>
-            <div style="display:flex;gap:8px;align-items:center;">
-                <input id="scriptNameInput" type="text" placeholder="输入名称（无需后缀）" style="flex:1" />
-                <span>.js</span>
-            </div>
-            <div style="margin-top:10px;text-align:right;">
-                <button id="scriptNameCancel">取消</button>
-                <button id="scriptNameOk">确定</button>
-            </div>
-        </dialog>
         <dialog id="dlgSettings">
-            <div class="dlg">
-                <div class="dlg-header">
+            <div class="dlg settings-layout-container"> <div class="dlg-header">
                     <div class="dlg-title">设置</div>
                     <button class="dlg-close" id="settingsClose">×</button>
                 </div>
-                <div class="dlg-body">
-                    <div class="setting-item">
-                        <div class="setting-label">全屏显示(F11)</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="fullscreenToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
+                
+                <div class="dlg-body settings-body">
+                    <div class="settings-sidebar">
+                        <div class="settings-nav-item active" data-tab="general">
+                            <span class="icon">⚙️</span> 常规设置
+                        </div>
+                        <div class="settings-nav-item" data-tab="visuals">
+                            <span class="icon">✨</span> 视觉效果
+                        </div>
                     </div>
-                    <div class="setting-item">
-                        <div class="setting-label">夜间模式</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="nightToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <div class="setting-label">当窗口弹出时置顶该窗口</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="popTopToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <div class="setting-label">收回窗口时自动打开串口助手</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="dockJumpToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <div class="setting-label">惊人的动画</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="animToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <div class="setting-label">更惊人的动画</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="animExtremeToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
-                    </div>
-                    <div class="setting-item">
-                        <div class="setting-label">冬季特效(建议开启夜间模式)</div>
-                        <label class="el-switch">
-                            <input type="checkbox" id="winterToggle">
-                            <span class="el-switch-core"></span>
-                        </label>
+
+                    <div class="settings-content">
+                        <div class="settings-section active" id="tab-general">
+                            <div class="settings-group-title">基础功能</div>
+                            <div class="setting-item">
+                                <div class="setting-label">全屏显示(F11)</div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="fullscreenToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-label">夜间模式</div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="nightToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+
+                            <div class="settings-group-title" style="margin-top:20px;">窗口行为</div>
+                            <div class="setting-item">
+                                <div class="setting-label">串口面板弹出时置顶</div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="popTopToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-label">串口面板收回时自动聚焦主界面</div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="dockJumpToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div class="settings-section" id="tab-visuals">
+                            <div class="settings-group-title">界面特效</div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">惊人的动画</div>
+                                    <div class="setting-desc">添加了一些按键交互</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="animToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">更惊人的动画</div>
+                                    <div class="setting-desc">添加了更多交互，可能会影响软件性能</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="animExtremeToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">冬季特效</div>
+                                    <div class="setting-desc">建议配合夜间模式</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="winterToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                        </div>
                     </div>
                 </div>
+
                 <div class="dlg-footer">
                     <button id="settingsOk">确定</button>
                 </div>

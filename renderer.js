@@ -945,7 +945,7 @@ window.addEventListener('click', (e) => {
     const text = (t.textContent || '').trim();
     if (/删除|弹出|关闭串口|打开串口|发送文件|运行脚本|保存|确定/.test(text)
         || t.classList.contains('btnPop') || t.id === 'btnSendFile'
-        || t.id === 'btnScriptRun' || t.id === 'btnScriptStop') {
+    ) {
         shakeScreenRandom(9, 0.55);
     }
 }, true);
@@ -972,7 +972,6 @@ function updateDeleteSelectedBtn() {
 
 const btnNew = $('#btnNew');
 const btnRefreshPorts = $('#btnRefreshPorts');
-const btnScriptStop = $('#btnScriptStop');
 let currentRunId = null;
 const SIDEBAR_COLLAPSED_W = 56;
 const board_margin = 2;
@@ -1017,67 +1016,6 @@ const cmdAdd = $('#cmdAdd');
 const cmdCancel = $('#cmdCancel');
 const cmdSave = $('#cmdSave');
 
-const openScriptBtn = $('#openScript');
-const dlgScript = $('#dlgScript');
-const scriptEditor = $('#scriptEditor');
-const scriptList = $('#scriptList');
-const btnScriptNew = $('#btnScriptNew');
-const currentScriptNameEl = $('#currentScriptName');
-let currentScript = '';
-const scriptDirHint = $('#scriptDirHint');
-const btnScriptSave = $('#btnScriptSave');
-const btnScriptDelete = $('#btnScriptDelete');
-const btnScriptRun = $('#btnScriptRun');
-const btnScriptClose = $('#btnScriptClose');
-// 示例脚本模板
-const DEFAULT_SCRIPT_TEMPLATE = `/**
- * SAEcom 脚本 API 速览
- * - send(data, mode='text'|'hex', end='none'|'CR'|'LF'|'CRLF'): Promise<void>
- * - sleep(ms): Promise<void>
- * - onData?(handler): 串口有数据到达时触发
- *
- * 示例功能：
- * 1) 每 1000ms 发送一个随机 10 位字符串（演示 send/sleep）
- * 2) 当串口收到数据时，原样回发（回声服务，演示读写）
- */
-
-// 生成随机字符串
-function rand(n = 10) {
-  const cs = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let s = ''; for (let i = 0; i < n; i++) s += cs[(Math.random()*cs.length)|0]; return s;
-}
-
-if (typeof onData === 'function') {
-  onData(async (evt) => {
-    // evt 可能是 { text, bytes } 或类似结构，做三种兜底
-    let text = '';
-    if (evt && typeof evt.text === 'string') {
-      text = evt.text;
-    } else if (evt && evt.bytes) {
-      try {
-        const TD = (typeof TextDecoder !== 'undefined') ? TextDecoder : (await import('util')).TextDecoder;
-        text = new TD('utf-8', { fatal:false }).decode(evt.bytes);
-      } catch { /* ignore */ }
-    } else if (typeof evt === 'string') {
-      text = evt;
-    }
-    if (text && text.trim()) {
-      await send(text, 'text', 'CRLF'); // 回声
-    }
-  });
-}
-
-// 持续发送示例数据（可用“停止运行”按钮终止）
-while (true) {
-  await send(rand(10), 'text', 'CRLF');
-  await sleep(1000);
-}
-`;
-
-const dlgScriptName = $('#dlgScriptName');
-const scriptNameInput = $('#scriptNameInput');
-const scriptNameOk = $('#scriptNameOk');
-const scriptNameCancel = $('#scriptNameCancel');
 const btnSaveLog = $('#btnSaveLog');
 const btnAddNote = $('#btnAddNote');
 btnSaveLog.addEventListener('click', async () => {
@@ -1208,7 +1146,7 @@ function syncCmdGroupsMetaWithCommands() {
     state.cmdGroupsMeta = meta;
     saveCmdGroupsMeta(meta);
 }
-
+let globalZIndex = 5000;
 const state = {
     panes: new Map(),
     activeId: null,
@@ -1227,11 +1165,7 @@ const state = {
 };
 
 function applyPaneZOrder() {
-    const base = 100;
-    state.paneOrder.forEach((id, idx) => {
-        const p = state.panes.get(id);
-        if (p && p.el) p.el.style.zIndex = String(base + (state.paneOrder.length - idx));
-    });
+
 }
 
 function promotePaneToFront(id) {
@@ -1349,74 +1283,6 @@ if (btnChangelog) {
     });
 }
 
-async function refreshScriptList() {
-    const dir = await window.api.scripts.dir();
-    scriptDirHint.textContent = dir || '';
-    const items = await window.api.scripts.list();
-    scriptList.innerHTML = '';
-    items.forEach(name => {
-        const li = document.createElement('li');
-        li.textContent = name;
-        li.onclick = async () => {
-            const code = await window.api.scripts.read(name);
-            currentScript = name;
-            currentScriptNameEl.textContent = name;
-
-            scriptEditor.readOnly = false;
-            scriptEditor.value = code || '';
-            scriptEditor.focus();
-        };
-        scriptList.appendChild(li);
-    });
-}
-
-function showTempStatus(text) {
-    const old = currentScriptNameEl.textContent;
-    currentScriptNameEl.textContent = (old || '') + `（${text}）`;
-    setTimeout(() => { currentScriptNameEl.textContent = currentScript || '（未选择）'; }, 1200);
-}
-
-function askScriptName(defaultBase = '新脚本') {
-    return new Promise((resolve) => {
-        if (!dlgScriptName || !scriptNameInput || !scriptNameOk || !scriptNameCancel) {
-            const input = prompt('输入脚本名称（无需后缀）', defaultBase) || '';
-            if (!input.trim()) return resolve('');
-            return resolve(input.endsWith('.js') ? input : `${input}.js`);
-        }
-
-        scriptNameInput.value = defaultBase;
-        dlgScriptName.showModal();
-
-        const ok = () => {
-            let n = (scriptNameInput.value || '').trim();
-            dlgScriptName.close();
-            resolve(n ? (n.endsWith('.js') ? n : n + '.js') : '');
-        };
-        const cancel = () => { dlgScriptName.close(); resolve(''); };
-
-        scriptNameOk.onclick = ok;
-        scriptNameCancel.onclick = cancel;
-        scriptNameInput.onkeydown = (e) => { if (e.key === 'Enter') ok(); };
-
-        setTimeout(() => scriptNameInput.select(), 0);
-    });
-}
-
-btnScriptNew.addEventListener('click', async () => {
-    const name = await askScriptName('新脚本');
-    if (!name) return;
-
-    await window.api.scripts.write(name, DEFAULT_SCRIPT_TEMPLATE);
-    await refreshScriptList();
-
-    currentScript = name;
-    currentScriptNameEl.textContent = name;
-
-    scriptEditor.readOnly = false;
-    scriptEditor.value = DEFAULT_SCRIPT_TEMPLATE;
-    scriptEditor.focus();
-});
-
 window.addEventListener('keydown', (e) => {
     if (e.key === 'F11') {
         e.preventDefault();
@@ -1427,79 +1293,6 @@ window.addEventListener('keydown', (e) => {
         window.api?.window?.setFullscreen(v);
     }
 });
-
-openScriptBtn.addEventListener('click', async () => {
-    await refreshScriptList();
-    currentScript = '';
-    currentScriptNameEl.textContent = '（未命名）';
-    scriptEditor.readOnly = false;
-    if (!scriptEditor.value) scriptEditor.value = '';
-    dlgScript.showModal();
-});
-
-btnScriptSave.addEventListener('click', async () => {
-    if (!currentScript) {
-        const name = await askScriptName('新脚本');
-        if (!name) return;
-        currentScript = name;
-    }
-
-    await window.api.scripts.write(currentScript, scriptEditor.value || '');
-    await refreshScriptList();
-    currentScriptNameEl.textContent = currentScript;
-
-    scriptEditor.readOnly = false;
-    scriptEditor.focus();
-    showTempStatus('已保存');
-});
-
-btnScriptDelete.addEventListener('click', async () => {
-    if (!currentScript) return uiAlert('未选择脚本');
-    const ok = await uiConfirm(`删除脚本：${currentScript} ?`, { danger: true, okText: '删除' });
-    if (!ok) return;
-    await window.api.scripts.delete(currentScript);
-    await refreshScriptList();
-    currentScript = '';
-    currentScriptNameEl.textContent = '（未命名）';
-    scriptEditor.readOnly = false;
-    scriptEditor.value = '';
-});
-
-btnScriptRun.addEventListener('click', async () => {
-    if (currentRunId) return alert('已有脚本在运行，请先停止或等待结束');
-    const id = state.activeId;
-    if (!id) return alert('请先选择一个面板');
-
-    const code = scriptEditor.value || '';
-    const { ok, runId, error } = await window.api.scripts.run(code, { id });
-    if (!ok) return alert('启动失败：' + (error || '未知错误'));
-
-    currentRunId = runId;
-    btnScriptRun.disabled = true;
-    btnScriptStop.disabled = false;
-
-    dlgScript.close();
-});
-btnScriptStop.addEventListener('click', async () => {
-    if (!currentRunId) return;
-    const { ok, error } = await window.api.scripts.stop(currentRunId);
-    if (!ok) alert('停止失败：' + (error || '未知错误'));
-});
-window.api.scripts.onEnded(({ runId, ok, error, logs }) => {
-    if (currentRunId && runId !== currentRunId) return;
-    currentRunId = null;
-    btnScriptRun.disabled = false;
-    btnScriptStop.disabled = true;
-
-    if (ok) {
-        alert((logs || []).join('\n') || '脚本运行结束');
-    } else {
-        const msg = (error === 'ABORTED') ? '已停止脚本' : ('脚本运行失败：' + error);
-        alert(msg + (logs?.length ? '\n' + logs.join('\n') : ''));
-    }
-});
-
-btnScriptClose.addEventListener('click', () => dlgScript.close());
 
 function nowTs() {
     const d = new Date();
@@ -1547,6 +1340,10 @@ function setActive(id) {
     if (pane) {
         pane.el.classList.add('active');
         activeLabel.textContent = pane.note || pane.info.name;
+        const currentZ = parseInt(pane.el.style.zIndex || 0);
+        if (currentZ !== globalZIndex) {
+            pane.el.style.zIndex = ++globalZIndex;
+        }
 
         if (typeof pane.sendText === 'string' && inputData) {
             inputData.value = pane.sendText;
@@ -1555,7 +1352,6 @@ function setActive(id) {
         mountSendBarForPane(pane);
 
         fillPortSelect(id);
-        promotePaneToFront(id);
         applyBottomPanelForPane(pane);
     } else {
         activeLabel.textContent = '（未选择）';
@@ -2055,6 +1851,8 @@ function createPane(portPath, name) {
     }
     const el = document.createElement('div');
     el.className = 'pane';
+    el.dataset.id = id;
+    el.style.zIndex = ++globalZIndex;
     const ws = document.getElementById('workspace');
     const sideW = sidebarEl ? sidebarEl.offsetWidth : 0;
     const margin = 16;
@@ -2201,7 +1999,6 @@ function createPane(portPath, name) {
         window.api.config.save(exportPanelsConfig());
     });
 
-    // ===== 拖动 =====
     const titleEl = el.querySelector('.title');
     titleEl.addEventListener('dragstart', e => e.preventDefault());
     el.addEventListener('dragstart', e => e.preventDefault());
@@ -3735,7 +3532,7 @@ function updateTitlebarSafeArea() {
 
     const wco = navigator.windowControlsOverlay;
     if (wco && typeof wco.getTitlebarAreaRect === 'function') {
-        const r = wco.getTitlebarAreaRect();   // {x,y,width,height}
+        const r = wco.getTitlebarAreaRect();
         if (r && r.height) {
             h = Math.max(28, Math.round(r.height));
             inset = h + 8;
@@ -4354,6 +4151,206 @@ window.addEventListener('message', (event) => {
         }
     } catch (e) { console.error('获取版本失败', e); }
 
+    function createBrowserPane(url) {
+        if (!url.startsWith('http')) url = 'https://' + url;
+        const el = document.createElement('div');
+        el.className = 'pane browser-pane';
+
+        // 初始化层级
+        el.style.zIndex = ++globalZIndex;
+
+        const ws = document.getElementById('workspace');
+        const wsW = ws.clientWidth;
+        const wsH = ws.clientHeight;
+        const paneW = 600;
+        const paneH = 450;
+
+        const initLeft = Math.max(60, (wsW - paneW) / 2 + (Math.random() * 40 - 20));
+        const initTop = Math.max(10, (wsH - paneH) / 2 + (Math.random() * 40 - 20));
+
+        el.style.left = initLeft + 'px';
+        el.style.top = initTop + 'px';
+        el.style.width = paneW + 'px';
+        el.style.height = paneH + 'px';
+
+        el.innerHTML = `
+        <div class="title" style="background:#f0f2f5;">
+            <button class="btnChangeUrl" style="margin-right:8px; font-size:12px; padding:0 8px; height:24px;">修改地址</button>
+            <div class="name" style="line-height:28px;">Loading...</div>
+            <div class="btns">
+                <button class="btnBack" title="后退">后退</button>
+                <button class="btnRefresh" title="刷新">刷新</button>
+                <button class="btnClose" title="关闭窗口" style="color:#F56C6C;">关闭</button>
+            </div>
+        </div>
+        <div class="body" style="padding:0;overflow:hidden;background:#fff;display:flex;flex-direction:column;">
+            <webview src="${escHtml(url)}" style="flex:1;width:100%;height:100%;" allowpopups></webview>
+        </div>
+        <div class="resizer t"></div><div class="resizer r"></div><div class="resizer b"></div><div class="resizer l"></div>
+        <div class="resizer tl"></div><div class="resizer tr"></div><div class="resizer bl"></div><div class="resizer br"></div>
+        `;
+
+        document.getElementById('panes').appendChild(el);
+
+        const webview = el.querySelector('webview');
+        const titleName = el.querySelector('.name');
+
+        const updateTitle = () => {
+            try { titleName.textContent = 'Web: ' + new URL(webview.getURL()).hostname; } catch { }
+        };
+
+        webview.addEventListener('did-start-loading', () => { titleName.textContent = 'Loading...'; });
+        webview.addEventListener('did-stop-loading', updateTitle);
+        webview.addEventListener('dom-ready', updateTitle);
+
+        // --- 修改点：定义激活逻辑 ---
+        const activateBrowserPane = () => {
+            // 1. 调用 setActive(null) 重置底部状态为“未选择”，并清除所有面板的 active 样式
+            setActive(null);
+
+            // 2. 手动给自己加上 active 样式（变蓝）
+            el.classList.add('active');
+
+            // 3. 提升层级到最前
+            const current = parseInt(el.style.zIndex || 0);
+            if (current !== globalZIndex) {
+                el.style.zIndex = ++globalZIndex;
+            }
+        };
+
+        // 事件1：Webview 聚焦时激活（点击网页内容）
+        webview.addEventListener('focus', activateBrowserPane);
+
+        // 事件2：面板被点击时激活（点击标题栏或边框）
+        el.addEventListener('mousedown', (e) => {
+            activateBrowserPane();
+            // 注意：不要在这里 e.preventDefault()，否则会导致输入框无法聚焦等问题
+        });
+        // --- 修改结束 ---
+
+        el.querySelector('.btnChangeUrl').onclick = async () => {
+            let currentSrc = webview.getURL();
+            const newUrl = await uiPrompt('请输入新网址', { title: '跳转', defaultValue: currentSrc });
+            if (newUrl) {
+                let finalUrl = newUrl;
+                if (!finalUrl.startsWith('http')) finalUrl = 'https://' + finalUrl;
+                webview.loadURL(finalUrl);
+            }
+        };
+
+        el.querySelector('.btnBack').onclick = () => { if (webview.canGoBack()) webview.goBack(); };
+        el.querySelector('.btnRefresh').onclick = () => { webview.reload(); };
+        el.querySelector('.btnClose').onclick = () => { el.remove(); };
+
+        const titleEl = el.querySelector('.title');
+        let isDrag = false, startX, startY, startL, startT;
+
+        titleEl.addEventListener('mousedown', (e) => {
+            if (e.target.tagName === 'BUTTON') return;
+            isDrag = true;
+            startX = e.clientX; startY = e.clientY;
+            startL = parseInt(el.style.left || 0); startT = parseInt(el.style.top || 0);
+            titleEl.style.cursor = 'grabbing';
+            webview.style.pointerEvents = 'none';
+            e.preventDefault();
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!isDrag) return;
+            let newL = startL + (e.clientX - startX);
+            let newT = startT + (e.clientY - startY);
+
+            const ws = document.getElementById('workspace');
+            const wsW = ws.clientWidth;
+            const wsH = ws.clientHeight;
+            const elW = el.offsetWidth;
+            const elH = el.offsetHeight;
+            const sideW = document.getElementById('sidebar')?.offsetWidth || 56;
+
+            if (newL < sideW) newL = sideW;
+            if (newL > wsW - elW) newL = wsW - elW;
+            if (newT < 0) newT = 0;
+            if (newT > wsH - elH) newT = wsH - elH;
+
+            el.style.left = newL + 'px';
+            el.style.top = newT + 'px';
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (isDrag) {
+                isDrag = false;
+                titleEl.style.cursor = 'grab';
+                webview.style.pointerEvents = 'auto';
+            }
+        });
+
+        const handles = el.querySelectorAll('.resizer');
+        let rs = { active: false, dir: '', sx: 0, sy: 0, sl: 0, st: 0, sw: 0, sh: 0 };
+
+        handles.forEach(h => {
+            h.addEventListener('mousedown', (e) => {
+                rs.active = true;
+                rs.dir = Array.from(h.classList).find(c => /^(t|r|b|l|tl|tr|bl|br)$/.test(c)) || 'br';
+                rs.sx = e.clientX; rs.sy = e.clientY;
+                rs.sl = el.offsetLeft; rs.st = el.offsetTop;
+                rs.sw = el.offsetWidth; rs.sh = el.offsetHeight;
+                webview.style.pointerEvents = 'none';
+                e.stopPropagation(); e.preventDefault();
+            });
+        });
+
+        window.addEventListener('mousemove', (e) => {
+            if (!rs.active) return;
+
+            const ws = document.getElementById('workspace');
+            const wsW = ws.clientWidth, wsH = ws.clientHeight;
+            const minW = 200, minH = 150;
+            const sideW = document.getElementById('sidebar')?.offsetWidth || 56;
+            const leftMin = sideW;
+
+            let dx = e.clientX - rs.sx;
+            let dy = e.clientY - rs.sy;
+            let left = rs.sl, top = rs.st, w = rs.sw, h = rs.sh;
+
+            if (rs.dir.includes('r')) {
+                const maxW = wsW - rs.sl;
+                w = Math.max(minW, Math.min(maxW, rs.sw + dx));
+            }
+            if (rs.dir.includes('b')) {
+                const maxH = wsH - rs.st;
+                h = Math.max(minH, Math.min(maxH, rs.sh + dy));
+            }
+            if (rs.dir.includes('l')) {
+                const leftMax = rs.sl + rs.sw - minW;
+                const leftNew = Math.max(leftMin, Math.min(leftMax, rs.sl + dx));
+                w = rs.sw + (rs.sl - leftNew);
+                left = leftNew;
+            }
+            if (rs.dir.includes('t')) {
+                const topMin = 0;
+                const topMax = rs.st + rs.sh - minH;
+                const topNew = Math.max(topMin, Math.min(topMax, rs.st + dy));
+                h = rs.sh + (rs.st - topNew);
+                top = topNew;
+            }
+
+            if (left + w > wsW) w = Math.max(minW, wsW - left);
+            if (top + h > wsH) h = Math.max(minH, wsH - top);
+
+            el.style.left = left + 'px';
+            el.style.top = top + 'px';
+            el.style.width = w + 'px';
+            el.style.height = h + 'px';
+        });
+
+        window.addEventListener('mouseup', () => {
+            if (rs.active) {
+                rs.active = false;
+                webview.style.pointerEvents = 'auto';
+            }
+        });
+    }
+
     (function initContextMenu() {
         const menu = document.createElement('div');
         menu.className = 'ctx-menu';
@@ -4373,6 +4370,42 @@ window.addEventListener('message', (event) => {
         document.addEventListener('contextmenu', (e) => {
             const paneEl = e.target.closest('.pane');
             if (!paneEl) {
+                if (e.target.closest('#panes') || e.target.closest('#workspace') || e.target === document.body) {
+                    e.preventDefault();
+                    menu.innerHTML = '';
+
+                    const addItem = (text, onClick) => {
+                        const item = document.createElement('div');
+                        item.className = 'ctx-item';
+                        item.textContent = text;
+                        item.onpointerdown = (evt) => {
+                            evt.stopPropagation();
+                            menu.classList.remove('visible');
+                            onClick();
+                        };
+                        menu.appendChild(item);
+                    };
+
+                    addItem('➕ 新建串口/TCP面板', () => {
+                        const btn = document.getElementById('btnNew');
+                        if (btn) btn.click();
+                    });
+
+                    addItem('🌐 新建浏览器页面', async () => {
+                        const url = await uiPrompt('请输入网址 (例如 baidu.com)', { title: '新建浏览器', defaultValue: 'https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/' });
+                        if (url) createBrowserPane(url);
+                    });
+
+                    let x = e.clientX;
+                    let y = e.clientY;
+                    if (x + 180 > window.innerWidth) x = window.innerWidth - 185;
+                    if (y + 100 > window.innerHeight) y = window.innerHeight - 100;
+
+                    menu.style.left = x + 'px';
+                    menu.style.top = y + 'px';
+                    menu.classList.add('visible');
+                    return;
+                }
                 menu.classList.remove('visible');
                 return;
             }
@@ -4487,7 +4520,6 @@ window.addEventListener('message', (event) => {
     })();
 
     updateDeleteSelectedBtn();
-
 })();
 
 function parseChangelogMarkdown(md) {
@@ -4543,7 +4575,6 @@ if (window.api && window.api.changelog && window.api.changelog.onLoad) {
     });
 }
 
-// 文件协议传输
 const CRC_TABLE = [
     0x0000, 0x1021, 0x2042, 0x3063, 0x4084, 0x50a5, 0x60c6, 0x70e7,
     0x8108, 0x9129, 0xa14a, 0xb16b, 0xc18c, 0xd1ad, 0xe1ce, 0xf1ef,
@@ -4661,7 +4692,10 @@ class YModemSender {
         );
 
         try {
-            const writePromise = window.api.serial.write(this.id, hex, 'hex');
+            const isTcp = this.id.startsWith('tcp://');
+            const writePromise = isTcp
+                ? window.api.tcp.write(this.id, hex, 'hex')
+                : window.api.serial.write(this.id, hex, 'hex');
             const res = await Promise.race([writePromise, timeoutPromise]);
             if (!res.ok) throw new Error(res.error || 'Write Failed');
         } catch (e) {
@@ -4783,3 +4817,630 @@ class YModemSender {
         await this.write(packet);
     }
 }
+
+const BLOCK_DEFS = {
+    'send': {
+        title: '发送数据', icon: '📤', color: '#409EFF',
+        render: (data) => `
+            <div class="vs-row"><input class="vs-input data-content" placeholder="发送的内容" value="${escHtml(data.content || '')}"></div>
+            <div class="vs-row">
+                <select class="vs-select data-mode"><option value="text" ${data.mode === 'text' ? 'selected' : ''}>Text</option><option value="hex" ${data.mode === 'hex' ? 'selected' : ''}>Hex</option></select>
+                <select class="vs-select data-append">
+                    <option value="CRLF" ${data.append === 'CRLF' ? 'selected' : ''}>+ \\r\\n</option>
+                    <option value="CR" ${data.append === 'CR' ? 'selected' : ''}>+ \\r</option>
+                    <option value="LF" ${data.append === 'LF' ? 'selected' : ''}>+ \\n</option>
+                    <option value="none" ${data.append === 'none' ? 'selected' : ''}>无结尾</option>
+                </select>
+            </div>`
+    },
+    'delay': {
+        title: '延时等待', icon: '⏱', color: '#909399',
+        render: (data) => `<div class="vs-row"><input type="number" class="vs-input data-ms" value="${data.ms || 1000}"><label>ms</label></div>`
+    },
+    'loop': {
+        title: '循环执行', icon: '🔁', color: '#67C23A', isContainer: true,
+        render: (data) => `<div class="vs-row"><label>循环次数</label><input type="number" class="vs-input data-count" value="${data.count || ''}" placeholder="填0则无限循环"></div><div class="vs-sub-container" data-slot="body"></div>`
+    },
+    'comment': {
+        title: '备注', icon: '📝', color: '#606266',
+        render: (data) => `<div class="vs-row"><textarea class="vs-input data-text" placeholder="在此输入备注信息" rows="2">${escHtml(data.text || '')}</textarea></div>`
+    },
+    'if_contains': {
+        title: '条件判断', icon: '❓', color: '#F56C6C', isContainer: true, hasElse: true,
+        render: (data) => `
+            <div class="vs-row"><label>如果有</label><input class="vs-input data-match" placeholder="想要读取的字符" value="${escHtml(data.match || '')}"></div>
+            <div class="vs-sub-container" data-slot="then"></div><div class="vs-slot-separator">否则</div><div class="vs-sub-container" data-slot="else"></div>`
+    }
+};
+
+function createBlockElement(type, data = {}) {
+    const def = BLOCK_DEFS[type];
+    if (!def) return null;
+    const el = document.createElement('div');
+    el.className = `vs-block ${def.isContainer ? 'container-block' : ''}`;
+    el.dataset.type = type;
+    el.style.borderLeft = `4px solid ${def.color}`;
+    el.innerHTML = `
+        <div class="vs-block-header" draggable="true">
+            <span class="icon">${def.icon}</span>
+            <span class="vs-block-title">${def.title}</span>
+            <span class="vs-block-del">×</span>
+        </div>
+        <div class="vs-block-body">${def.render(data)}</div>`;
+    el.querySelector('.vs-block-del').onclick = (e) => { e.stopPropagation(); el.remove(); checkPlaceholder(); };
+    if (def.isContainer) {
+        if (def.hasElse) {
+            const t = el.querySelector('[data-slot="then"]'), e = el.querySelector('[data-slot="else"]');
+            if (data.childrenThen) data.childrenThen.forEach(c => t.appendChild(createBlockElement(c.type, c) || ''));
+            if (data.childrenElse) data.childrenElse.forEach(c => e.appendChild(createBlockElement(c.type, c) || ''));
+            initDragZone(t); initDragZone(e);
+        } else {
+            const b = el.querySelector('.vs-sub-container');
+            if (data.children) data.children.forEach(c => b.appendChild(createBlockElement(c.type, c) || ''));
+            initDragZone(b);
+        }
+    }
+    initBlockDrag(el);
+    return el;
+}
+
+function serializeBlocks(c) { const b = [];[...c.children].forEach(el => { if (!el.classList.contains('vs-block')) return; const t = el.dataset.type, def = BLOCK_DEFS[t], d = { type: t }; el.querySelectorAll(':scope>.vs-block-body .vs-input,:scope>.vs-block-body .vs-select').forEach(i => d[[...i.classList].find(c => c.startsWith('data-'))?.substring(5)] = i.value); if (def.isContainer) { if (def.hasElse) { d.childrenThen = serializeBlocks(el.querySelector('[data-slot="then"]')); d.childrenElse = serializeBlocks(el.querySelector('[data-slot="else"]')); } else { d.children = serializeBlocks(el.querySelector('.vs-sub-container')); } } b.push(d); }); return b; }
+function loadBlocks(c, d) { c.innerHTML = '<div class="vs-placeholder">从左侧拖拽模块到此处...</div>'; if (!d) return; d.forEach(i => { const e = createBlockElement(i.type, i); if (e) c.appendChild(e) }); checkPlaceholder(); }
+function escJs(s) { return (s || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/\n/g, '\\n'); }
+function escHtml(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function checkPlaceholder() { const vsCanvas = document.getElementById('vsCanvas'); if (vsCanvas) vsCanvas.querySelector('.vs-placeholder').style.display = vsCanvas.querySelector('.vs-block') ? 'none' : 'block'; }
+function getDragAfterElement(c, y) { return [...c.querySelectorAll(':scope>.vs-block:not(.vs-dragging)')].reduce((r, e) => { const box = e.getBoundingClientRect(), off = y - box.top - box.height / 2; return (off < 0 && off > r.offset) ? { offset: off, element: e } : r }, { offset: Number.NEGATIVE_INFINITY }).element; }
+
+function compileBlocksToJS(blocks) {
+    let code = `try {\n`;
+    let loopIdx = 0;
+
+    function traverse(list, indent = '  ') {
+        let script = '';
+        list.forEach(block => {
+            script += `${indent}if (await checkStop()) return;\n`;
+
+            if (block.type === 'send') {
+                script += `${indent}await send("${escJs(block.content)}", "${block.mode}", "${block.append}");\n`;
+            } else if (block.type === 'delay') {
+                script += `${indent}await sleep(${block.ms});\n`;
+            } else if (block.type === 'comment') {
+                const lines = (block.text || '').split(/\r?\n/);
+                lines.forEach(line => {
+                    script += `${indent}// ${line}\n`;
+                });
+            } else if (block.type === 'loop') {
+                const ivar = `i_${loopIdx++}`;
+                const count = parseInt(block.count || 0);
+                if (count > 0) script += `${indent}for (let ${ivar}=0; ${ivar}<${count}; ${ivar}++) {\n`;
+                else script += `${indent}while (true) {\n`;
+                script += `${indent}  await sleep(10);\n`;
+                if (block.children) script += traverse(block.children, indent + '  ');
+                script += `${indent}}\n`;
+            } else if (block.type === 'if_contains') {
+                script += `${indent}var _recv = await waitOnePacket();\n`;
+                script += `${indent}if ((_recv||'').includes("${escJs(block.match)}")) {\n`;
+                if (block.childrenThen) script += traverse(block.childrenThen, indent + '  ');
+                script += `${indent}} else {\n`;
+                if (block.childrenElse) script += traverse(block.childrenElse, indent + '  ');
+                script += `${indent}}\n`;
+            }
+        });
+        return script;
+    }
+
+    code += traverse(blocks);
+    code += `  } catch (e) { \n    if(e.message!=='ABORTED') console.log("Error: "+e.message); \n  }`;
+    return code;
+}
+
+let vsDragSrc = null;
+function initDragZone(z) { if (z._d) return; z._d = 1; z.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); z.classList.add('drag-over'); const a = getDragAfterElement(z, e.clientY), d = document.querySelector('.vs-dragging'); if (d) a ? z.insertBefore(d, a) : z.appendChild(d) }); z.addEventListener('dragleave', () => z.classList.remove('drag-over')); z.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); z.classList.remove('drag-over'); if (vsDragSrc && vsDragSrc.classList.contains('vs-block-template')) { const t = vsDragSrc.dataset.type, n = createBlockElement(t), a = getDragAfterElement(z, e.clientY); if (n) { a ? z.insertBefore(n, a) : z.appendChild(n); checkPlaceholder(); } } }); }
+function initBlockDrag(e) { const h = e.querySelector('.vs-block-header'); h.addEventListener('dragstart', ev => { vsDragSrc = e; e.classList.add('vs-dragging'); ev.dataTransfer.effectAllowed = 'move'; ev.stopPropagation(); }); h.addEventListener('dragend', () => { e.classList.remove('vs-dragging'); vsDragSrc = null; }); }
+
+let isRefeshing = false;
+async function refreshScriptList() {
+    const el = document.getElementById('scriptList');
+    if (!el) return;
+    try {
+        const files = await window.api.scripts.list();
+        el.innerHTML = '';
+        [...new Set(files)].forEach(name => {
+            const li = document.createElement('li');
+            li.textContent = name;
+            if (currentScript === name) {
+                li.classList.add('active');
+            }
+            li.onclick = async () => {
+                try {
+                    const content = await window.api.scripts.read(name);
+                    const evt = new CustomEvent('script-selected', { detail: { name, content } });
+                    document.dispatchEvent(evt);
+
+                    Array.from(el.children).forEach(c => c.classList.remove('active'));
+                    li.classList.add('active');
+                } catch (err) {
+                    console.error("Read script failed:", err);
+                }
+            };
+            el.appendChild(li);
+        });
+    } catch (err) {
+        console.error("Refresh list failed:", err);
+    }
+}
+
+(function initVisualScriptSystem() {
+    console.log('[VS_DEBUG] Visual Script System Initializing...');
+
+    const runningScripts = {};
+    let currentScript = null;
+    let scriptSnapshot = null;
+    function getCurrentBlockState() {
+        return JSON.stringify(serializeBlocks(document.getElementById('vsCanvas')));
+    }
+    async function checkUnsavedAndProceed() {
+        if (!currentScript) return true;
+
+        const currentState = getCurrentBlockState();
+        if (scriptSnapshot !== null && currentState !== scriptSnapshot) {
+
+            const wantSave = await uiConfirm(`脚本 "${currentScript}" 有未保存的修改。\n是否保存修改？`, {
+                okText: '保存',
+                cancelText: '不保存'
+            });
+
+            if (wantSave) {
+                const btn = document.getElementById('btnScriptSave');
+                if (btn) btn.click();
+                await new Promise(r => setTimeout(r, 200));
+
+                if (getCurrentBlockState() === scriptSnapshot) {
+                    return true;
+                } else {
+                    return false;
+                }
+            } else {
+                return true;
+            }
+        }
+        return true;
+    }
+
+    const vsCanvas = document.getElementById('vsCanvas');
+    const btnScriptNew = document.getElementById('btnScriptNew');
+    const btnScriptSave = document.getElementById('btnScriptSave');
+    const btnScriptRun = document.getElementById('btnScriptRun');
+    const btnScriptStop = document.getElementById('btnScriptStop');
+    const btnScriptClose = document.getElementById('btnScriptClose');
+    const btnScriptDelete = document.getElementById('btnScriptDelete');
+    const currentScriptName = document.getElementById('currentScriptName');
+    const dlgScript = document.getElementById('dlgScript');
+    const currentPanelLabel = document.getElementById('currentPanelLabel');
+
+    async function refreshScriptList() {
+        const el = document.getElementById('scriptList');
+        if (!el) return;
+
+        try {
+            const files = await window.api.scripts.list();
+            el.innerHTML = '';
+            [...new Set(files)].forEach(name => {
+                const li = document.createElement('li');
+                li.textContent = name;
+                if (currentScript === name) {
+                    li.classList.add('active');
+                }
+
+                li.onclick = async () => {
+                    if (currentScript !== name) {
+                        if (!await checkUnsavedAndProceed()) return;
+                    }
+                    try {
+                        const content = await window.api.scripts.read(name);
+                        const evt = new CustomEvent('script-selected', { detail: { name, content } });
+                        document.dispatchEvent(evt);
+                        Array.from(el.children).forEach(c => c.classList.remove('active'));
+                        li.classList.add('active');
+                    } catch (err) {
+                        console.error("Read script failed:", err);
+                    }
+                };
+                el.appendChild(li);
+            });
+        } catch (err) {
+            console.error("Refresh list failed:", err);
+        }
+    }
+
+    document.addEventListener('script-selected', (e) => {
+        const { name, content } = e.detail;
+        currentScript = name;
+        if (currentScriptName) {
+            currentScriptName.textContent = name;
+            currentScriptName.style.color = "";
+            currentScriptName.style.fontWeight = "";
+        }
+
+        const m = content.match(/\/\* VS_BLOCKS_START\n([\s\S]*?)\nVS_BLOCKS_END \*\//);
+        vsCanvas.innerHTML = '';
+        if (m && m[1]) {
+            try {
+                loadBlocks(vsCanvas, JSON.parse(m[1]));
+            } catch {
+                vsCanvas.innerHTML = '<div class="vs-placeholder">数据解析失败</div>';
+            }
+        } else {
+            vsCanvas.innerHTML = '<div class="vs-placeholder">纯代码模式无法可视化编辑</div>';
+        }
+        setTimeout(() => {
+            scriptSnapshot = getCurrentBlockState();
+        }, 10);
+        updateEditorState('ScriptSelected');
+    });
+
+    let tooltipEl = document.getElementById('vs-tooltip-overlay');
+    if (tooltipEl && tooltipEl.parentElement === document.body) {
+        tooltipEl.remove();
+        tooltipEl = null;
+    }
+    if (!tooltipEl) {
+        tooltipEl = document.createElement('div');
+        tooltipEl.id = 'vs-tooltip-overlay';
+        if (dlgScript) dlgScript.appendChild(tooltipEl);
+    }
+    function updateTooltipPos(e) {
+        if (!dlgScript) return;
+        const dlgRect = dlgScript.getBoundingClientRect();
+        const offset = 15;
+        let relX = e.clientX - dlgRect.left + offset;
+        let relY = e.clientY - dlgRect.top + offset;
+        if (relX + 320 > dlgRect.width) relX = e.clientX - dlgRect.left - 330;
+        if (relY + 150 > dlgRect.height) relY = e.clientY - dlgRect.top - 120;
+        tooltipEl.style.left = relX + 'px';
+        tooltipEl.style.top = relY + 'px';
+    }
+    document.querySelectorAll('.vs-block-template').forEach(tpl => {
+        const helpIcon = tpl.querySelector('.vs-tpl-help');
+        const desc = helpIcon ? helpIcon.getAttribute('data-real-desc') : null;
+        if (helpIcon && desc) {
+            helpIcon.addEventListener('mouseenter', (e) => {
+                tooltipEl.textContent = desc;
+                tooltipEl.style.display = 'block';
+                tooltipEl.style.zIndex = '999999';
+                updateTooltipPos(e);
+            });
+            helpIcon.addEventListener('mousemove', (e) => updateTooltipPos(e));
+            helpIcon.addEventListener('mouseleave', () => { tooltipEl.style.display = 'none'; });
+        }
+        tpl.addEventListener('dragstart', (e) => {
+            vsDragSrc = tpl;
+            e.dataTransfer.effectAllowed = 'copy';
+            e.dataTransfer.setData('type', tpl.dataset.type);
+            tooltipEl.style.display = 'none';
+        });
+        tpl.addEventListener('dragend', () => vsDragSrc = null);
+    });
+    initDragZone(vsCanvas);
+
+    function updateEditorState(reason = 'Unknown') {
+        const panelId = state ? state.activeId : null;
+        const hasScript = !!currentScript;
+
+        let displayName = "未选择面板";
+        let isPanelSelected = false;
+        if (panelId && state.panes.has(panelId)) {
+            const pane = state.panes.get(panelId);
+            displayName = (pane.note && pane.note.trim()) ? pane.note : (pane.info.name || panelId);
+            isPanelSelected = true;
+        }
+        if (currentPanelLabel) {
+            currentPanelLabel.textContent = displayName;
+            currentPanelLabel.style.color = isPanelSelected ? "#E6A23C" : "#909399";
+        }
+
+        if (!hasScript) {
+            vsCanvas.classList.add('vs-disabled');
+        } else {
+            vsCanvas.classList.remove('vs-disabled');
+        }
+
+        if (btnScriptSave) btnScriptSave.disabled = !hasScript;
+        if (btnScriptDelete) btnScriptDelete.disabled = !hasScript;
+
+        const activeRunId = runningScripts[panelId];
+
+        if (!isPanelSelected) {
+            if (btnScriptRun) btnScriptRun.disabled = true;
+            if (btnScriptStop) btnScriptStop.disabled = true;
+        } else if (activeRunId) {
+            if (btnScriptRun) btnScriptRun.disabled = true;
+            if (btnScriptStop) {
+                btnScriptStop.disabled = false;
+                btnScriptStop.removeAttribute('disabled');
+                btnScriptStop.innerText = "⏹ 停止脚本";
+                btnScriptStop.style.opacity = "1";
+            }
+        } else {
+            if (btnScriptRun) {
+                btnScriptRun.disabled = !hasScript;
+                if (hasScript) btnScriptRun.removeAttribute('disabled');
+            }
+            if (btnScriptStop) {
+                btnScriptStop.disabled = true;
+                btnScriptStop.innerText = "⏹ 停止";
+                btnScriptStop.style.opacity = "0.5";
+            }
+        }
+    }
+
+    const openBtn = document.getElementById('openScript');
+    if (openBtn) {
+        openBtn.onclick = () => {
+            dlgScript.showModal();
+            refreshScriptList();
+            if (!currentScript) {
+                currentScriptName.textContent = '（未选中）';
+                vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击“新建”</div>';
+            } else {
+                checkPlaceholder();
+            }
+            updateEditorState('DialogOpen');
+        };
+    }
+    if (btnScriptClose) btnScriptClose.onclick = async () => {
+        if (await checkUnsavedAndProceed()) {
+            dlgScript.close();
+            currentScript = null;
+            scriptSnapshot = null;
+        }
+    };
+
+    if (btnScriptNew) btnScriptNew.onclick = async () => {
+        if (!await checkUnsavedAndProceed()) return;
+        try {
+            let files = [];
+            try { files = await window.api.scripts.list(); } catch (e) { console.error(e); }
+            if (!Array.isArray(files)) files = [];
+
+            let i = 1;
+            while (files.includes(`Script_${i}.js`)) i++;
+            const name = await uiPrompt('新建脚本名称', { defaultValue: `Script_${i}.js` });
+            if (!name) return;
+
+            const filename = name.endsWith('.js') ? name : name + '.js';
+            const defaultBlocks = [
+                {
+                    type: 'comment',
+                    text: '这是一个示例脚本。作用是一直监听串口收到的数据。每次收到的数据时，如果包含“123”则回复收到，否则则回复未收到。（循环次数0意为无限循环。）'
+                },
+                {
+                    type: 'loop',
+                    count: '0',
+                    children: [
+                        {
+                            type: 'if_contains',
+                            match: '123',
+                            childrenThen: [
+                                {
+                                    type: 'send',
+                                    content: '收到',
+                                    mode: 'text',
+                                    append: 'CRLF'
+                                }
+                            ],
+                            childrenElse: [
+                                {
+                                    type: 'send',
+                                    content: '未收到',
+                                    mode: 'text',
+                                    append: 'CRLF'
+                                }
+                            ]
+                        }
+                    ]
+                }
+            ];
+            const js = compileBlocksToJS(defaultBlocks);
+            const content = `/* VS_BLOCKS_START\n${JSON.stringify(defaultBlocks)}\nVS_BLOCKS_END */\n\n${js}`;
+            const res = await window.api.scripts.write(filename, content);
+            if (res.ok) {
+                await refreshScriptList();
+
+                const el = document.getElementById('scriptList');
+                if (el) {
+                    const newLi = Array.from(el.children).find(li => li.textContent === filename);
+                    if (newLi) {
+                        newLi.click();
+                    }
+                }
+
+                updateEditorState('NewScriptCreated');
+            } else {
+                uiAlert('创建失败: ' + res.error);
+            }
+        } catch (err) {
+            console.error(err);
+            uiAlert('发生未知错误: ' + err.message);
+        }
+    };
+
+    if (btnScriptSave) btnScriptSave.onclick = async () => {
+        if (!currentScript) return;
+        const data = serializeBlocks(vsCanvas);
+        const js = compileBlocksToJS(data);
+        const content = `/* VS_BLOCKS_START\n${JSON.stringify(data)}\nVS_BLOCKS_END */\n\n${js}`;
+
+        btnScriptSave.classList.add('btn-loading');
+        try {
+            const res = await window.api.scripts.write(currentScript, content);
+            if (res.ok) {
+                scriptSnapshot = getCurrentBlockState();
+                updateEditorState('Saved');
+                const originalText = currentScript;
+
+                currentScriptName.textContent = "保存成功！";
+                currentScriptName.style.color = "#67C23A";
+                currentScriptName.style.fontWeight = "bold";
+
+                setTimeout(() => {
+                    if (currentScriptName.textContent === "保存成功！") {
+                        currentScriptName.textContent = originalText;
+                        currentScriptName.style.color = "";
+                        currentScriptName.style.fontWeight = "";
+                    }
+                }, 2000);
+            } else {
+                uiAlert('保存失败: ' + (res.error || '未知错误'));
+            }
+        } finally {
+            btnScriptSave.classList.remove('btn-loading');
+        }
+    };
+
+    if (btnScriptDelete) btnScriptDelete.onclick = async () => {
+        if (!currentScript) return;
+        if (await uiConfirm(`确定删除脚本 “${currentScript}” 吗？`, { danger: true })) {
+            await window.api.scripts.delete(currentScript);
+            currentScript = null;
+            currentScriptName.textContent = '（未选中）';
+            currentScriptName.style.color = "";
+            currentScriptName.style.fontWeight = "";
+            vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击“新建”</div>';
+
+            await refreshScriptList();
+            updateEditorState('ScriptDeleted');
+        }
+    };
+
+    if (btnScriptRun) btnScriptRun.onclick = async () => {
+        const panelId = state ? state.activeId : null;
+        if (!panelId) return uiAlert('请先在主界面选择一个面板！');
+
+        const blocksData = serializeBlocks(vsCanvas);
+        const jsCode = compileBlocksToJS(blocksData);
+
+        if (currentScript) {
+            const fileContent = `/* VS_BLOCKS_START\n${JSON.stringify(blocksData)}\nVS_BLOCKS_END */\n\n${jsCode}`;
+            window.api.scripts.write(currentScript, fileContent);
+        }
+        btnScriptRun.disabled = true;
+        const res = await window.api.scripts.run(jsCode, { id: panelId });
+        if (res.ok) {
+            runningScripts[panelId] = res.runId;
+            updateEditorState('RunStarted');
+            refreshScriptList();
+        } else {
+            uiAlert('启动失败: ' + res.error);
+            updateEditorState('RunFailed');
+        }
+    };
+
+    if (btnScriptStop) btnScriptStop.onclick = async () => {
+        const panelId = state ? state.activeId : null;
+        if (!panelId) return;
+        const runId = runningScripts[panelId];
+        if (runId) {
+            btnScriptStop.disabled = true;
+            await window.api.scripts.stop(runId);
+        }
+    };
+
+    if (window.api.scripts && window.api.scripts.onEnded) {
+        window.api.scripts.onEnded((res) => {
+            let targetPanelId = null;
+            for (const [pId, rId] of Object.entries(runningScripts)) {
+                if (rId === res.runId) { targetPanelId = pId; break; }
+            }
+            if (targetPanelId) {
+                delete runningScripts[targetPanelId];
+                if (state && state.activeId === targetPanelId) {
+                    updateEditorState('ScriptEnded');
+                }
+            }
+        });
+    }
+
+    const listOb = new MutationObserver(() => { if (dlgScript.open) updateEditorState('PanelSwitched'); });
+    if (document.getElementById('panelList')) {
+        listOb.observe(document.getElementById('panelList'), { subtree: true, attributes: true, attributeFilter: ['class'] });
+    }
+})();
+
+const settingsNavItems = document.querySelectorAll('.settings-nav-item');
+const settingsSections = document.querySelectorAll('.settings-section');
+
+settingsNavItems.forEach(item => {
+    item.addEventListener('click', () => {
+        settingsNavItems.forEach(n => n.classList.remove('active'));
+        settingsSections.forEach(s => s.classList.remove('active'));
+        item.classList.add('active');
+        const targetId = `tab-${item.dataset.tab}`;
+        const targetSection = document.getElementById(targetId);
+        if (targetSection) {
+            targetSection.classList.add('active');
+        }
+    });
+});
+
+window.addEventListener('mousedown', (e) => {
+    const p = e.target.closest('.pane');
+    if (p) {
+        const current = parseInt(p.style.zIndex || 0);
+        if (current !== globalZIndex) {
+            p.style.zIndex = ++globalZIndex;
+        }
+    }
+}, true);
+
+(function initTelemetry() {
+    const STORAGE_KEY = 'app_device_id';
+    
+    let deviceId = localStorage.getItem(STORAGE_KEY);
+    if (!deviceId) {
+        deviceId = 'u_' + Math.random().toString(36).slice(2, 11) + Date.now().toString(36);
+        localStorage.setItem(STORAGE_KEY, deviceId);
+    }
+    const reportLaunch = async () => {
+        const API_URL = 'https://filebox.satone1008.cn/report.php'; 
+        
+        let realVersion = '1.0.0';
+        try {
+            if (window.api && window.api.app && window.api.app.getVersion) {
+                realVersion = await window.api.app.getVersion();
+            } else {
+                realVersion = document.getElementById('appVersion')?.textContent || '1.0.0';
+            }
+        } catch (e) {
+        }
+
+        let geoData = {};
+        try {
+            const geoRes = await fetch('http://ip-api.com/json/?lang=zh-CN');
+            if (geoRes.ok) {
+                geoData = await geoRes.json();
+            }
+        } catch (e) {
+        }
+
+        try {
+            await fetch(API_URL, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    uid: deviceId,
+                    version: realVersion,
+                    os: navigator.platform,
+                    timestamp: Date.now(),
+                    ip: geoData.query || '',
+                    country: geoData.country || '',
+                    region: geoData.regionName || '',
+                    city: geoData.city || '',
+                    isp: geoData.isp || ''
+                })
+            });
+        } catch (e) {
+        }
+    };
+    setTimeout(reportLaunch, 5000);
+})();
