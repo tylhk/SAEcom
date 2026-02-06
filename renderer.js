@@ -1146,7 +1146,7 @@ function syncCmdGroupsMetaWithCommands() {
     state.cmdGroupsMeta = meta;
     saveCmdGroupsMeta(meta);
 }
-let globalZIndex = 5000;
+let globalZIndex = 10;
 const state = {
     panes: new Map(),
     activeId: null,
@@ -1935,13 +1935,16 @@ function createPane(portPath, name) {
                     refreshPanelList();
                     return;
                 }
-                pane.options = {
-                    baudRate: parseInt(baud.value, 10),
-                    dataBits: parseInt(databits.value, 10),
-                    stopBits: parseInt(stopbits.value, 10),
-                    parity: parity.value
+                const currentOpts = pane.options || {};
+                const finalOptions = {
+                    baudRate: parseInt(currentOpts.baudRate || 115200, 10),
+                    dataBits: parseInt(currentOpts.dataBits || 8, 10),
+                    stopBits: parseInt(currentOpts.stopBits || 1, 10),
+                    parity: currentOpts.parity || 'none'
                 };
-                const r = await window.api.serial.open(id, pane.options);
+                pane.options = finalOptions; 
+
+                const r = await window.api.serial.open(id, finalOptions);
                 if (r && r.ok) {
                     pane.open = true;
                     btnToggle.textContent = '关闭串口';
@@ -4156,7 +4159,6 @@ window.addEventListener('message', (event) => {
         const el = document.createElement('div');
         el.className = 'pane browser-pane';
 
-        // 初始化层级
         el.style.zIndex = ++globalZIndex;
 
         const ws = document.getElementById('workspace');
