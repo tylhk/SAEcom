@@ -646,6 +646,24 @@ ipcMain.handle('scripts:stop', (e, { runId }) => {
   return { ok: true };
 });
 
+ipcMain.handle('logger:append', async (event, filePath, text) => {
+  try {
+    await fs.promises.appendFile(filePath, text, 'utf8');
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('logger:pickFile', async (event) => {
+  const result = await dialog.showSaveDialog({
+    title: '选择日志保存位置',
+    defaultPath: 'serial_log.txt',
+    filters: [{ name: 'Text Files', extensions: ['txt', 'log'] }]
+  });
+  return result;
+});
+
 app.whenReady().then(() => { ensureScriptsDir(); createMainWindow(); app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createMainWindow(); }); });
 setTimeout(checkForUpdates, 3000);
 

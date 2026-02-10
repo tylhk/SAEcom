@@ -165,6 +165,71 @@ function logToPane(pane, text) {
     pane.chunks.push({ text: msg, hex: msg, isEcho: false });
     appendTextTail(pane, msg);
 }
+
+function showLimitDialog(currentVal, isEnabled) {
+    return new Promise((resolve) => {
+        const dlg = document.createElement('dialog');
+        dlg.className = 'sys-modal';
+        dlg.innerHTML = `
+            <div class="box">
+                <div class="title">设置数据保留条数</div>
+                <div class="msg">请输入要保留的最新数据行数：<br><span style="font-size:12px;color:#909399">(录制日志时，此设置优先级高于默认的100条限制)</span></div>
+                <input class="prompt-input" type="number" value="${currentVal}" min="10" step="100">
+                <div class="actions">
+                    ${isEnabled ? '<button class="danger btn-off" style="margin-right:auto">关闭限制</button>' : ''}
+                    <button class="btn-cancel">取消</button>
+                    <button class="primary btn-ok">确定</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(dlg);
+
+        const input = dlg.querySelector('input');
+        const cleanup = () => { dlg.remove(); };
+
+        dlg.querySelector('.btn-cancel').onclick = () => {
+            cleanup();
+            resolve(null);
+        };
+
+        const onConfirm = () => {
+            let val = parseInt(input.value, 10);
+            if (isNaN(val) || val <= 0) val = 1000;
+            if (val < 10) val = 10;
+            cleanup();
+            resolve(val);
+        };
+
+        dlg.querySelector('.btn-ok').onclick = onConfirm;
+
+        if (isEnabled) {
+            dlg.querySelector('.btn-off').onclick = () => {
+                cleanup();
+                resolve(false);
+            };
+        }
+
+        input.onkeydown = (e) => {
+            if (e.key === 'Enter') onConfirm();
+            if (e.key === 'Escape') { cleanup(); resolve(null); }
+        };
+
+        dlg.showModal();
+        input.focus();
+        input.select();
+    });
+}
+
+function handleRealtimeLog(pane, rawText) {
+    if (!pane.logging || !pane.logging.active || !pane.logging.path) return;
+
+    if (typeof rawText === 'string') {
+        const ts = nowTs();
+        const line = `[${ts}] ${rawText}`; 
+        window.api.logger.append(pane.logging.path, line).catch(() => {});
+    }
+}
+
 function uiPrompt(message, { title = '输入', okText = '确定', cancelText = '取消', defaultValue = '' } = {}) {
     const { dlg, title: t, msg, input, select, ok, cancel } = ensureSysModal();
     ok.classList.remove('danger');
@@ -1017,7 +1082,11 @@ const cmdCancel = $('#cmdCancel');
 const cmdSave = $('#cmdSave');
 
 const btnSaveLog = $('#btnSaveLog');
+const btnRealtimeLog = $('#btnRealtimeLog');
+const btnLimitView = $('#btnLimitView');
 const btnAddNote = $('#btnAddNote');
+const LIMIT_VIEW_COUNT = 1000;
+const LOGGING_SAFE_COUNT = 100;
 btnSaveLog.addEventListener('click', async () => {
     const id = state.activeId;
     if (!id) return alert('请先选择一个面板');
@@ -1153,20 +1222,14 @@ const state = {
     knownPorts: [],
     buffers: new Map(),
     savedConfig: [],
-
     commands: [],
     cmdPage: 0,
     cmdCols: 1,
     cmdRows: 1,
     cmdIntervalMap: new Map(),
     cmdGroupsMeta: loadCmdGroupsMeta(),
-
     paneOrder: []
 };
-
-function applyPaneZOrder() {
-
-}
 
 function promotePaneToFront(id) {
     const arr = state.paneOrder;
@@ -1174,7 +1237,6 @@ function promotePaneToFront(id) {
     if (i >= 0) arr.splice(i, 1);
     arr.unshift(id);
     state.paneOrder = arr.filter(x => state.panes.has(x));
-    applyPaneZOrder();
 }
 
 function exportPanelsConfig() {
@@ -1211,6 +1273,32 @@ function escHtml(s) {
 }
 
 function trimPane(pane) {
+    let limit = Infinity;
+    
+    if (pane.limitView) {
+        limit = pane.limitCount || LIMIT_VIEW_COUNT;
+    } else if (pane.logging && pane.logging.active) {
+        limit = LOGGING_SAFE_COUNT;
+    }
+
+    if (limit !== Infinity) {
+        if (pane.chunks.length > limit) {
+            const removeCount = pane.chunks.length - limit;
+            pane.chunks.splice(0, removeCount);
+
+            if (pane.textBuffer.length > limit * 50) { 
+                 pane.textBuffer = pane.textBuffer.slice(-(limit * 20));
+                 pane.hexBuffer = pane.hexBuffer.slice(-(limit * 20));
+            }
+
+            const body = pane.el.querySelector('.body');
+            while (body.childNodes.length > limit) {
+                body.removeChild(body.firstChild);
+            }
+        }
+        return;
+    }
+
     const MAX = LOG_MAX_CHARS;
     const LIMIT = MAX * 1.2;
     if (pane.textBuffer.length <= LIMIT && pane.hexBuffer.length <= LIMIT) return;
@@ -1225,7 +1313,7 @@ function trimPane(pane) {
 function appendTextTail(pane, text) {
     const body = pane.el.querySelector('.body');
     const last = body.lastChild;
-    if (pane.tailTextNode && last === pane.tailTextNode) {
+    if (!pane.logging?.active && pane.tailTextNode && last === pane.tailTextNode) {
         pane.tailTextNode.appendData(text);
     } else {
         const tn = document.createTextNode(text);
@@ -1303,11 +1391,15 @@ function nowTs() {
 }
 
 function echoIfEnabled(id, text) {
-    const echo = $('#echoSend');
-    if (!echo || !echo.checked) return;
-
     const pane = state.panes.get(id);
     if (!pane) return;
+
+    if (pane.logging && pane.logging.active) {
+        handleRealtimeLog(pane, `[SEND] ${text}\n`);
+    }
+
+    const echo = $('#echoSend');
+    if (!echo || !echo.checked) return;
 
     const ts = nowTs();
     const addText = `[${ts}] ${text}\n`;
@@ -1315,6 +1407,10 @@ function echoIfEnabled(id, text) {
     pane.textBuffer += addText;
     pane.hexBuffer += addText;
     pane.chunks.push({ text: addText, hex: addText, isEcho: true });
+    
+    if (pane.logging && pane.logging.active) {
+        handleRealtimeLog(pane, null);
+    }
     trimPane(pane);
 
     const el = document.createElement('span');
@@ -1322,6 +1418,111 @@ function echoIfEnabled(id, text) {
     el.textContent = addText;
     appendNodeTail(pane, el);
 }
+
+function updateLogBtnUI(pane) {
+    if (!pane) {
+        btnRealtimeLog.textContent = '实时保存数据';
+        btnRealtimeLog.classList.remove('danger');
+        btnRealtimeLog.disabled = true;
+        return;
+    }
+    btnRealtimeLog.disabled = false;
+    
+    if (pane.logging && pane.logging.active) {
+        btnRealtimeLog.innerHTML = '<span class="icon-spin">●</span> 停止录制';
+        btnRealtimeLog.classList.add('danger');
+        btnRealtimeLog.title = `正在录制到: ${pane.logging.path}`;
+    } else {
+        btnRealtimeLog.textContent = '实时保存数据';
+        btnRealtimeLog.classList.remove('danger');
+        btnRealtimeLog.title = '将接收到的数据实时写入文件';
+    }
+}
+
+async function toggleLogging(pane) {
+    if (!pane) return;
+
+    if (pane.logging && pane.logging.active) {
+        pane.logging.active = false;
+        pane.logging.path = null;
+        appendSysLine(pane, '[系统] 已停止实时数据录制');
+        
+        const badge = pane.el.querySelector('.log-badge');
+        if (badge) badge.remove();
+        
+        if (state.activeId === pane.info.path) {
+            updateLogBtnUI(pane);
+        }
+        return;
+    }
+
+    const res = await window.api.logger.pickFile();
+    if (res.canceled || !res.filePath) return;
+
+    pane.logging = { active: true, path: res.filePath };
+    appendSysLine(pane, `[系统] 开始录制到: ${res.filePath}\n[系统] 录制期间界面仅保留最新100条数据。`);
+
+    const titleBtns = pane.el.querySelector('.title .btns');
+    if (titleBtns && !pane.el.querySelector('.log-badge')) {
+        const badge = document.createElement('span');
+        badge.className = 'log-badge';
+        badge.innerHTML = '● REC';
+        titleBtns.parentElement.insertBefore(badge, titleBtns);
+    }
+
+    if (state.activeId === pane.info.path) {
+        updateLogBtnUI(pane);
+    }
+}
+
+async function toggleLimitView(pane) {
+    const currentVal = pane.limitCount || LIMIT_VIEW_COUNT;
+    const result = await showLimitDialog(currentVal, pane.limitView);
+
+    if (result === null) return;
+
+    if (result === false) {
+        pane.limitView = false;
+    } else {
+        pane.limitView = true;
+        pane.limitCount = result;
+    }
+
+    if (state.activeId === pane.info.path) {
+        updateLimitBtnUI(pane);
+    }
+    trimPane(pane);
+}
+
+function updateLimitBtnUI(pane) {
+    if (!pane) {
+        btnLimitView.disabled = true;
+        btnLimitView.classList.remove('active');
+        btnLimitView.textContent = '设置保留条数';
+        return;
+    }
+    btnLimitView.disabled = false;
+    if (pane.limitView) {
+        btnLimitView.classList.add('active');
+        const count = pane.limitCount || LIMIT_VIEW_COUNT; 
+        btnLimitView.textContent = `设置保留条数`;
+        btnLimitView.title = `当前只保留最新 ${count} 条数据，点击设置`;
+    } else {
+        btnLimitView.classList.remove('active');
+        btnLimitView.textContent = '设置保留条数';
+        btnLimitView.title = '点击开启数据条数限制，防止内存溢出';
+    }
+}
+
+btnLimitView.addEventListener('click', () => {
+    const pane = state.panes.get(state.activeId);
+    if (pane) toggleLimitView(pane);
+});
+
+btnRealtimeLog.addEventListener('click', () => {
+    const pane = state.panes.get(state.activeId);
+    if (pane) toggleLogging(pane);
+});
 
 function setActive(id) {
     lockConfig = true;
@@ -1350,11 +1551,14 @@ function setActive(id) {
         }
 
         mountSendBarForPane(pane);
-
+        updateLogBtnUI(pane);
+        updateLimitBtnUI(pane);
         fillPortSelect(id);
         applyBottomPanelForPane(pane);
     } else {
         activeLabel.textContent = '（未选择）';
+        updateLogBtnUI(null);
+        updateLimitBtnUI(null);
         applyBottomPanelForPane(null);
 
         if (sendRowMain) {
@@ -2173,6 +2377,9 @@ function createPane(portPath, name) {
         type: paneType,
         options: { baudRate: 115200, dataBits: 8, stopBits: 1, parity: 'none' },
         open: false,
+        logging: { active: false, path: null },
+        limitView: false,
+        limitCount: LIMIT_VIEW_COUNT,
         viewMode: 'text',
         logs: [],
 
@@ -2493,12 +2700,16 @@ window.api.serial.onData(({ id, bytes }) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
+
+        handleRealtimeLog(pane, textStr);
+
         const addText = (withTs ? `[${ts}] ` : '') + textStr;
         const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
         pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
         trimPane(pane);
+
         const piece = (pane.viewMode === 'hex') ? addHex : addText;
         appendTextTail(pane, piece);
     };
@@ -2508,10 +2719,12 @@ window.api.serial.onData(({ id, bytes }) => {
         if (g.timer) clearTimeout(g.timer);
         g.timer = setTimeout(() => {
             if (!pane.textBuffer.endsWith('\n')) {
-                pane.textBuffer += '\n';
-                pane.hexBuffer += '\n';
-                pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
-                appendTextTail(pane, '\n');
+                const nl = '\n';
+                if(pane.logging?.active) window.api.logger.append(pane.logging.path, nl).catch(()=>{});
+                pane.textBuffer += nl;
+                pane.hexBuffer += nl;
+                pane.chunks.push({ text: nl, hex: nl, isEcho: false });
+                appendTextTail(pane, nl);
             }
             g.open = false;
             g.timer = null;
@@ -2519,10 +2732,12 @@ window.api.serial.onData(({ id, bytes }) => {
     } else {
         appendChunk(true);
         if (!pane.textBuffer.endsWith('\n')) {
-            pane.textBuffer += '\n';
-            pane.hexBuffer += '\n';
-            pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
-            appendTextTail(pane, '\n');
+            const nl = '\n';
+            if(pane.logging?.active) window.api.logger.append(pane.logging.path, nl).catch(()=>{});
+            pane.textBuffer += nl;
+            pane.hexBuffer += nl;
+            pane.chunks.push({ text: nl, hex: nl, isEcho: false });
+            appendTextTail(pane, nl);
         }
     }
 
@@ -2544,12 +2759,16 @@ window.api.tcp.onData(({ id, bytes }) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
+
+        handleRealtimeLog(pane, textStr);
+
         const addText = (withTs ? `[${ts}] ` : '') + textStr;
         const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
         pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
         trimPane(pane);
+        
         const piece = (pane.viewMode === 'hex') ? addHex : addText;
         appendTextTail(pane, piece);
     };
@@ -2559,10 +2778,13 @@ window.api.tcp.onData(({ id, bytes }) => {
         if (g.timer) clearTimeout(g.timer);
         g.timer = setTimeout(() => {
             if (!pane.textBuffer.endsWith('\n')) {
-                pane.textBuffer += '\n';
-                pane.hexBuffer += '\n';
-                pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
-                appendTextTail(pane, '\n');
+                const nl = '\n';
+                if(pane.logging?.active) window.api.logger.append(pane.logging.path, nl).catch(()=>{});
+
+                pane.textBuffer += nl;
+                pane.hexBuffer += nl;
+                pane.chunks.push({ text: nl, hex: nl, isEcho: false });
+                appendTextTail(pane, nl);
             }
             g.open = false;
             g.timer = null;
@@ -2570,10 +2792,13 @@ window.api.tcp.onData(({ id, bytes }) => {
     } else {
         appendChunk(true);
         if (!pane.textBuffer.endsWith('\n')) {
-            pane.textBuffer += '\n';
-            pane.hexBuffer += '\n';
-            pane.chunks.push({ text: '\n', hex: '\n', isEcho: false });
-            appendTextTail(pane, '\n');
+            const nl = '\n';
+            if(pane.logging?.active) window.api.logger.append(pane.logging.path, nl).catch(()=>{});
+
+            pane.textBuffer += nl;
+            pane.hexBuffer += nl;
+            pane.chunks.push({ text: nl, hex: nl, isEcho: false });
+            appendTextTail(pane, nl);
         }
     }
 });
@@ -4446,6 +4671,17 @@ window.addEventListener('message', (event) => {
                 sep.className = 'ctx-separator';
                 menu.appendChild(sep);
             };
+
+            if (pane.logging && pane.logging.active) {
+                addItem('停止记录实时数据', () => toggleLogging(pane));
+            } else {
+                addItem('开始记录实时数据', () => toggleLogging(pane));
+            }
+
+            const limitLabel = `设置保留条数`;
+            addItem(limitLabel, () => toggleLimitView(pane));
+
+            addSeparator();
 
             if (hasSelection) {
                 addItem('复制选中内容', () => {

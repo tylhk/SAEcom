@@ -3361,3 +3361,49 @@ textarea.vs-input {
     color: #e6e6e6;
     border-color: var(--el-border-dark);
 }
+
+.log-badge {
+    color: #F56C6C;
+    font-weight: bold;
+    font-size: 12px;
+    margin-right: 8px;
+    animation: blink-rec 1s infinite;
+    cursor: default;
+}
+
+@keyframes blink-rec {
+    0% { opacity: 1; }
+    50% { opacity: 0.4; }
+    100% { opacity: 1; }
+}
+
+#btnRealtimeLog.danger {
+    color: #fff;
+    background: #F56C6C;
+    border-color: #F56C6C;
+}
+#btnRealtimeLog.danger:hover {
+    background: #f78989;
+    border-color: #f78989;
+}
+
+.icon-spin {
+    display: inline-block;
+    animation: blink-rec 1.5s infinite;
+}
+
+.theme-dark textarea.vs-input {
+    background: #1e1e1e;
+    color: #e6e6e6;
+    border-color: var(--el-border-dark);
+}
+
+#btnLimitView.active {
+    color: #fff;
+    background: #67c23a;
+    border-color: #67c23a;
+}
+#btnLimitView.active:hover {
+    background: #85ce61;
+    border-color: #85ce61;
+}

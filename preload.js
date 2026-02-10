@@ -67,6 +67,10 @@ contextBridge.exposeInMainWorld('api', {
   file: {
     readHex: (filePath) => ipcRenderer.invoke('file:readHex', filePath)
   },
+  logger: {
+    append: (path, text) => ipcRenderer.invoke('logger:append', path, text),
+    pickFile: () => ipcRenderer.invoke('logger:pickFile')
+  },
   shell: {
     openExternal: (url) => shell.openExternal(url)
   },
