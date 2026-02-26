@@ -41,16 +41,22 @@
                     <div class="row">
                         <label>当前面板：</label>
                         <span id="activePanelLabel">（未选择）</span>
+                        <span class="v-separator"></span>
                         <button id="btnAddNote">添加备注</button>
-                        <button id="btnSaveLog">导出面板数据</button>
-                        <button id="btnLimitView">设置显示数据条数</button>
-                        <button id="btnRealtimeLog">实时保存数据</button>
-                        <button id="btnShowWave">打开示波器</button>
+                        <span class="v-separator"></span>
+                        <button id="btnSaveLog">导出为文件</button>
+                        <span class="v-separator"></span>
+                        <button id="btnLimitView">设置数据显示条数</button>
+                        <span class="v-separator"></span>
+                        <button id="btnRealtimeLog">实时保存</button>
+                        <span class="v-separator"></span>
+                        <button id="btnShowWave">示波器</button>
                     </div>
 
                     <div class="row" id="serial-param-row">
                         <label>波特率：</label>
                         <input id="baud" type="number" value="115200" min="110" step="1" />
+                        <span class="v-separator"></span>
                         <label>数据位：</label>
                         <select id="databits">
                             <option>8</option>
@@ -58,11 +64,13 @@
                             <option>6</option>
                             <option>5</option>
                         </select>
+                        <span class="v-separator"></span>
                         <label>停止位：</label>
                         <select id="stopbits">
                             <option>1</option>
                             <option>2</option>
                         </select>
+                        <span class="v-separator"></span>
                         <label>校验：</label>
                         <select id="parity">
                             <option value="none">none</option>
@@ -85,6 +93,7 @@
                     <div class="row split-line" id="row-send-opts">
                         <label>接收缓冲(ms):</label>
                         <input id="bufferTime" type="number" value="50" min="0" step="1" style="width:80px" />
+                        <span class="v-separator"></span>
                         <label>发送结尾：</label>
                         <select id="append">
                             <option value="CRLF">CRLF</option>
@@ -92,15 +101,22 @@
                             <option value="CR">CR</option>
                             <option value="LF">LF</option>
                         </select>
+                        <span class="v-separator"></span>
                         <label><input type="checkbox" id="hexMode"> 以HEX格式发送</label>
+                        <span class="v-separator"></span>
                         <label><input type="checkbox" id="echoSend"> 发送回显</label>
                     </div>
 
                     <div class="row">
-                        <label>文件：</label>
-                        <input id="fileName" type="text" placeholder="拖拽文件到此处…" readonly />
+                        
+                        <label>文件名：</label>
+                        <input id="fileName" type="text" placeholder="也可直接拖拽文件到此处…" readonly />
                         <input id="fileChooser" type="file" style="display:none" />
+                        <span class="v-separator"></span>
                         <button id="btnChooseFile">选择文件</button>
+                        <span class="v-separator"></span>
+                        <button id="btnSendFile">发送文件</button>
+                        <span class="v-separator"></span>
                         <label>发送协议：</label>
                         <select id="sendProtocol" style="width: 100px; margin-right: 6px;" title="选择发送协议">
                             <option value="raw">直接发送</option>
@@ -108,7 +124,6 @@
                             <option value="ymodem">YModem</option>
                             <option value="zmodem">ZModem</option>
                         </select>
-                        <button id="btnSendFile">发送文件</button>
                     </div>
                 </div>
                 <div class="page" id="page-commands" style="display:none">
@@ -164,11 +179,11 @@
                                         onclick="window.api.shell.openExternal(this.href); return false;">
                                         <span class="cell-icon">📦</span>
                                         <div class="cell-content">
-                                            <span class="cell-label">GitHub</span>
+                                            <span class="cell-label">Github仓库</span>
                                             <span class="cell-value">查看源码</span>
                                         </div>
                                     </a>
-                                    <a href="https://satone1008.cn/index.php/2025/09/16/saecom/"
+                                    <a href="https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/"
                                         class="info-cell link-cell"
                                         onclick="window.api.shell.openExternal(this.href); return false;">
                                         <span class="cell-icon">📝</span>

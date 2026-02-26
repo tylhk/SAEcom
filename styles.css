@@ -3407,3 +3407,24 @@ textarea.vs-input {
     background: #85ce61;
     border-color: #85ce61;
 }
+
+#activePanelLabel {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--el-color-primary);
+  margin-right: 8px;
+  letter-spacing: 0.5px;
+}
+
+.v-separator {
+    display: inline-block;
+    width: 1px;
+    height: 18px;
+    background-color: var(--el-border-color);
+    margin: 0 5px;
+    vertical-align: middle;
+}
+
+.theme-dark .v-separator {
+    background-color: var(--el-border-dark);
+}

@@ -224,9 +224,7 @@ function handleRealtimeLog(pane, rawText) {
     if (!pane.logging || !pane.logging.active || !pane.logging.path) return;
 
     if (typeof rawText === 'string') {
-        const ts = nowTs();
-        const line = `[${ts}] ${rawText}`; 
-        window.api.logger.append(pane.logging.path, line).catch(() => {});
+        window.api.logger.append(pane.logging.path, rawText).catch(() => {});
     }
 }
 
@@ -1394,10 +1392,6 @@ function echoIfEnabled(id, text) {
     const pane = state.panes.get(id);
     if (!pane) return;
 
-    if (pane.logging && pane.logging.active) {
-        handleRealtimeLog(pane, `[SEND] ${text}\n`);
-    }
-
     const echo = $('#echoSend');
     if (!echo || !echo.checked) return;
 
@@ -1409,7 +1403,7 @@ function echoIfEnabled(id, text) {
     pane.chunks.push({ text: addText, hex: addText, isEcho: true });
     
     if (pane.logging && pane.logging.active) {
-        handleRealtimeLog(pane, null);
+        handleRealtimeLog(pane, addText);
     }
     trimPane(pane);
 
@@ -2701,8 +2695,6 @@ window.api.serial.onData(({ id, bytes }) => {
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
 
-        handleRealtimeLog(pane, textStr);
-
         const addText = (withTs ? `[${ts}] ` : '') + textStr;
         const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
@@ -2711,6 +2703,7 @@ window.api.serial.onData(({ id, bytes }) => {
         trimPane(pane);
 
         const piece = (pane.viewMode === 'hex') ? addHex : addText;
+        handleRealtimeLog(pane, piece);
         appendTextTail(pane, piece);
     };
     if (bufferTime > 0) {
@@ -2760,8 +2753,6 @@ window.api.tcp.onData(({ id, bytes }) => {
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
 
-        handleRealtimeLog(pane, textStr);
-
         const addText = (withTs ? `[${ts}] ` : '') + textStr;
         const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
@@ -2770,6 +2761,7 @@ window.api.tcp.onData(({ id, bytes }) => {
         trimPane(pane);
         
         const piece = (pane.viewMode === 'hex') ? addHex : addText;
+        handleRealtimeLog(pane, piece);
         appendTextTail(pane, piece);
     };
     if (bufferTime > 0) {
