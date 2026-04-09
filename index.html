@@ -17,6 +17,7 @@
             <div class="sidebar-actions">
                 <button id="btnNew">新建面板</button>
                 <button id="btnRefreshPorts">刷新串口</button>
+                <button id="btnNewVPort">虚拟串口对</button>
             </div>
             <ul id="panelList"></ul>
             <div class="sidebar-footer">
@@ -375,6 +376,66 @@
                                 <div class="setting-label">夜间模式</div>
                                 <label class="el-switch">
                                     <input type="checkbox" id="nightToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+
+                            <div class="settings-group-title" style="margin-top:20px;">串口数据显示</div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">显示接收时间戳</div>
+                                    <div class="setting-desc">在每条接收数据前显示时间戳</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="rxTimestampToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">显示发送时间戳</div>
+                                    <div class="setting-desc">在发送回显前显示时间戳</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="txTimestampToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">字符编码格式</div>
+                                    <div class="setting-desc">接收解码与文本发送所使用的编码</div>
+                                </div>
+                                <select id="charEncodingSelect" class="setting-select">
+                                    <option value="utf-8">UTF-8</option>
+                                    <option value="gbk">GBK / GB2312</option>
+                                    <option value="gb18030">GB18030</option>
+                                    <option value="big5">Big5（繁体中文）</option>
+                                    <option value="shift_jis">Shift-JIS（日文）</option>
+                                    <option value="euc-kr">EUC-KR（韩文）</option>
+                                    <option value="iso-8859-1">ISO-8859-1（Latin-1）</option>
+                                    <option value="ascii">ASCII</option>
+                                </select>
+                            </div>
+
+                            <div class="settings-group-title" style="margin-top:20px;">操作确认</div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">清空面板前确认</div>
+                                    <div class="setting-desc">清空数据前弹出二次确认弹窗</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="confirmClearToggle">
+                                    <span class="el-switch-core"></span>
+                                </label>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">删除面板前确认</div>
+                                    <div class="setting-desc">删除面板前弹出二次确认弹窗</div>
+                                </div>
+                                <label class="el-switch">
+                                    <input type="checkbox" id="confirmDeleteToggle">
                                     <span class="el-switch-core"></span>
                                 </label>
                             </div>

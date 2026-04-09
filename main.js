@@ -3,6 +3,8 @@ const { app, BrowserWindow, ipcMain, shell, dialog } = require('electron');
 const { SerialPort } = require('serialport');
 const { randomUUID } = require('crypto');
 const path = require('path');
+let iconv = null;
+try { iconv = require('iconv-lite'); } catch { iconv = null; }
 const fs = require('fs');
 const vm = require('vm');
 const https = require('https');
@@ -204,11 +206,11 @@ ipcMain.handle('tcp:open', async (e, { host, port, options }) => {
   });
 });
 
-ipcMain.handle('tcp:write', async (_e, { id, data, mode = 'text', append = 'none' }) => {
+ipcMain.handle('tcp:write', async (_e, { id, data, mode = 'text', append = 'none', encoding = 'utf-8' }) => {
   const entry = sockets.get(id);
   if (!entry || !entry.socket) return { ok: false, error: 'NOT_OPEN' };
   let buf;
-  try { buf = buildWriteBuffer(data, mode, append); } catch (e) { return { ok: false, error: e.message }; }
+  try { buf = buildWriteBuffer(data, mode, append, encoding); } catch (e) { return { ok: false, error: e.message }; }
   return await new Promise(res => entry.socket.write(buf, err => res(err ? { ok: false, error: err.message } : { ok: true, bytes: buf.length })));
 });
 
@@ -222,7 +224,7 @@ ipcMain.handle('tcp:close', async (_e, { id }) => {
 });
 
 // ========== 串口 ==========
-function buildWriteBuffer(data, mode, append) {
+function buildWriteBuffer(data, mode, append, encoding = 'utf-8') {
   let payload = data || '';
   if (append === 'CR') payload += '\r';
   else if (append === 'LF') payload += '\n';
@@ -233,12 +235,16 @@ function buildWriteBuffer(data, mode, append) {
     return Buffer.from(clean.match(/.{1,2}/g).map(h => parseInt(h, 16)));
   }
   if (mode === 'base64') return Buffer.from(payload, 'base64');
+  const enc = (encoding || 'utf-8').toLowerCase();
+  if (enc !== 'utf-8' && enc !== 'utf8' && iconv && iconv.encodingExists(enc)) {
+    return iconv.encode(payload, enc);
+  }
   return Buffer.from(payload, 'utf8');
 }
-function writeToSerial(id, data, mode = 'text', append = 'none') {
+function writeToSerial(id, data, mode = 'text', append = 'none', encoding = 'utf-8') {
   const entry = ports.get(id);
   if (!entry) return Promise.resolve({ ok: false, error: 'PORT_NOT_OPEN' });
-  let buf; try { buf = buildWriteBuffer(data, mode, append); } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
+  let buf; try { buf = buildWriteBuffer(data, mode, append, encoding); } catch (e) { return Promise.resolve({ ok: false, error: e.message }); }
   return new Promise(r => entry.port.write(buf, err => r(err ? { ok: false, error: err.message } : { ok: true, bytes: buf.length })));
 }
 function startTcpShare(portId, sharePort = 9000) {
@@ -457,7 +463,7 @@ ipcMain.handle('serial:close', async (_e, { id }) => {
 });
 
 
-ipcMain.handle('serial:write', async (_e, a) => writeToSerial(a.id, a.data, a.mode, a.append));
+ipcMain.handle('serial:write', async (_e, a) => writeToSerial(a.id, a.data, a.mode, a.append, a.encoding));
 ipcMain.handle('file:readHex', (_e, filePath) => {
   try {
     const buf = fs.readFileSync(filePath);
@@ -881,3 +887,138 @@ function runInstallerAndQuit(filePath) {
 function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
+
+// ========== 虚拟串口对 ==========
+const virtualPairs = new Map(); // pairId => { pairId, portA, portB, server, clients: { A: socket|null, B: socket|null } }
+const VPORT_BASE = 19901;
+const VPORT_PATH = path.join(app.getPath('userData'), 'virtual-pairs.json');
+
+function loadVirtualPairsConfig() {
+  try { return JSON.parse(fs.readFileSync(VPORT_PATH, 'utf-8')); } catch { return []; }
+}
+function saveVirtualPairsConfig(pairs) {
+  try { fs.writeFileSync(VPORT_PATH, JSON.stringify(pairs, null, 2), 'utf-8'); } catch (e) { console.error(e); }
+}
+
+function createVirtualPair(pairId) {
+  if (virtualPairs.has(pairId)) {
+    return { ok: true, pairId, portA: virtualPairs.get(pairId).portA, portB: virtualPairs.get(pairId).portB, already: true };
+  }
+
+  const num = parseInt(pairId.replace('vp-', ''), 10) || 1;
+  const portA = VPORT_BASE + (num - 1) * 2;
+  const portB = portA + 1;
+
+  const srvA = net.createServer();
+  const srvB = net.createServer();
+  let clientA = null;
+  let clientB = null;
+
+  function relayData(src, dst) {
+    if (dst && !dst.destroyed) {
+      try { dst.write(src); } catch { }
+    }
+  }
+
+  srvA.on('connection', (sock) => {
+    try { sock.setNoDelay(true); } catch { }
+    clientA = sock;
+    sock.on('data', (buf) => relayData(buf, clientB));
+    sock.on('close', () => { clientA = null; });
+    sock.on('error', () => { try { sock.destroy(); } catch { } clientA = null; });
+  });
+  srvA.on('error', (err) => { console.error('[VirtualPort] Server A error:', err?.message || err); });
+
+  srvB.on('connection', (sock) => {
+    try { sock.setNoDelay(true); } catch { }
+    clientB = sock;
+    sock.on('data', (buf) => relayData(buf, clientA));
+    sock.on('close', () => { clientB = null; });
+    sock.on('error', () => { try { sock.destroy(); } catch { } clientB = null; });
+  });
+  srvB.on('error', (err) => { console.error('[VirtualPort] Server B error:', err?.message || err); });
+
+  return new Promise((resolve, reject) => {
+    let pending = 2;
+    let failed = false;
+
+    function done(err) {
+      if (failed) return;
+      if (err) {
+        failed = true;
+        try { srvA.close(); } catch { }
+        try { srvB.close(); } catch { }
+        reject({ ok: false, error: err?.message || String(err) });
+        return;
+      }
+      pending--;
+      if (pending === 0) {
+        virtualPairs.set(pairId, { pairId, portA, portB, serverA: srvA, serverB: srvB, clientA: null, clientB: null });
+        resolve({ ok: true, pairId, portA, portB });
+      }
+    }
+
+    srvA.listen(portA, '127.0.0.1', () => done()).on('error', (e) => done(e));
+    srvB.listen(portB, '127.0.0.1', () => done()).on('error', (e) => done(e));
+  });
+}
+
+function destroyVirtualPair(pairId) {
+  const pair = virtualPairs.get(pairId);
+  if (!pair) return;
+  try {
+    pair.serverA.close();
+    pair.serverB.close();
+  } catch { }
+  virtualPairs.delete(pairId);
+}
+
+function listVirtualPairs() {
+  const result = [];
+  for (const [id, pair] of virtualPairs) {
+    result.push({
+      pairId: id,
+      portA: pair.portA,
+      portB: pair.portB,
+    });
+  }
+  return result;
+}
+
+ipcMain.handle('virtualPort:create', async () => {
+  const saved = loadVirtualPairsConfig();
+  let pairId;
+  let num = 1;
+  while (true) {
+    pairId = `vp-${num}`;
+    if (!virtualPairs.has(pairId) && !saved.some(p => p.pairId === pairId)) break;
+    num++;
+  }
+  const r = await createVirtualPair(pairId);
+  if (r.ok) {
+    saved.push({ pairId: r.pairId, portA: r.portA, portB: r.portB });
+    saveVirtualPairsConfig(saved);
+  }
+  return r;
+});
+
+ipcMain.handle('virtualPort:destroy', async (_e, { pairId }) => {
+  destroyVirtualPair(pairId);
+  const saved = loadVirtualPairsConfig().filter(p => p.pairId !== pairId);
+  saveVirtualPairsConfig(saved);
+  return { ok: true };
+});
+
+ipcMain.handle('virtualPort:list', () => listVirtualPairs());
+
+ipcMain.handle('virtualPort:restore', async () => {
+  const saved = loadVirtualPairsConfig();
+  const results = [];
+  for (const cfg of saved) {
+    try {
+      const r = await createVirtualPair(cfg.pairId);
+      if (r.ok) results.push(r);
+    } catch { }
+  }
+  return results;
+});

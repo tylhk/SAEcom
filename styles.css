@@ -357,8 +357,14 @@ input[type="number"],
   font-size: 18px;
 }
 
+#btnNewVPort::before {
+  content: "🔗";
+  font-size: 18px;
+}
+
 #btnNew::after,
-#btnRefreshPorts::after {
+#btnRefreshPorts::after,
+#btnNewVPort::after {
   display: inline-block;
   white-space: nowrap;
   overflow: hidden;
@@ -378,15 +384,21 @@ input[type="number"],
   content: "刷新串口";
 }
 
+#btnNewVPort::after {
+  content: "虚拟串口对";
+}
+
 #sidebar.open #btnNew::after,
-#sidebar.open #btnRefreshPorts::after {
+#sidebar.open #btnRefreshPorts::after,
+#sidebar.open #btnNewVPort::after {
   max-width: 200px;
   opacity: 1;
   margin-left: 6px;
 }
 
 #sidebar:not(.open) #btnNew::after,
-#sidebar:not(.open) #btnRefreshPorts::after {
+#sidebar:not(.open) #btnRefreshPorts::after,
+#sidebar:not(.open) #btnNewVPort::after {
   transition-delay: 0s, 0s, 0s;
 }
 
@@ -3267,6 +3279,21 @@ input[type="number"] {
     font-size: 12px;
     color: var(--el-text-color-secondary);
     margin-top: 2px;
+}
+.setting-select {
+    padding: 4px 8px;
+    border: 1px solid var(--el-border-color, #dcdfe6);
+    border-radius: 4px;
+    background: var(--el-fill-color-blank, #fff);
+    color: var(--el-text-color-primary, #303133);
+    font-size: 13px;
+    min-width: 160px;
+    cursor: pointer;
+}
+.theme-dark .setting-select {
+    background: #232831;
+    border-color: #444c5a;
+    color: #cfd3dc;
 }
 
 .theme-dark .settings-sidebar {

@@ -504,6 +504,11 @@ let draggingRow = null;
 const SETTINGS_KEY = 'appSettings';
 const popTopToggle = document.getElementById('popTopToggle');
 const dockJumpToggle = document.getElementById('dockJumpToggle');
+const rxTimestampToggle = document.getElementById('rxTimestampToggle');
+const txTimestampToggle = document.getElementById('txTimestampToggle');
+const confirmClearToggle = document.getElementById('confirmClearToggle');
+const confirmDeleteToggle = document.getElementById('confirmDeleteToggle');
+const charEncodingSelect = document.getElementById('charEncodingSelect');
 function loadSettings() {
     try {
         const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) || '{}');
@@ -514,10 +519,16 @@ function loadSettings() {
             animExtreme: !!s.animExtreme,
             popTop: s.popTop !== false,
             dockJump: s.dockJump !== false,
-            winter: !!s.winter
+            winter: !!s.winter,
+            rxTimestamp: s.rxTimestamp !== false,
+            txTimestamp: s.txTimestamp !== false,
+            confirmClear: s.confirmClear !== false,
+            confirmDelete: s.confirmDelete !== false,
+            charEncoding: s.charEncoding || 'utf-8'
         };
     } catch {
-        return { fullscreen: false, dark: false, anim: false, popTop: true, dockJump: true, winter: false };
+        return { fullscreen: false, dark: false, anim: false, popTop: true, dockJump: true, winter: false,
+                 rxTimestamp: true, txTimestamp: true, confirmClear: true, confirmDelete: true, charEncoding: 'utf-8' };
     }
 }
 function saveSettings(s) {
@@ -541,6 +552,11 @@ btnSettings.addEventListener('click', () => {
     if (animExtremeToggle) animExtremeToggle.checked = !!settings.animExtreme;
     if (popTopToggle) popTopToggle.checked = !!settings.popTop;
     if (dockJumpToggle) dockJumpToggle.checked = !!settings.dockJump;
+    if (rxTimestampToggle) rxTimestampToggle.checked = settings.rxTimestamp !== false;
+    if (txTimestampToggle) txTimestampToggle.checked = settings.txTimestamp !== false;
+    if (confirmClearToggle) confirmClearToggle.checked = settings.confirmClear !== false;
+    if (confirmDeleteToggle) confirmDeleteToggle.checked = settings.confirmDelete !== false;
+    if (charEncodingSelect) charEncodingSelect.value = settings.charEncoding || 'utf-8';
     dlgSettings.showModal();
 });
 settingsClose.addEventListener('click', () => dlgSettings.close());
@@ -571,6 +587,36 @@ if (popTopToggle) {
 if (dockJumpToggle) {
     dockJumpToggle.addEventListener('change', () => {
         settings.dockJump = dockJumpToggle.checked;
+        saveSettings();
+    });
+}
+if (rxTimestampToggle) {
+    rxTimestampToggle.addEventListener('change', () => {
+        settings.rxTimestamp = rxTimestampToggle.checked;
+        saveSettings();
+    });
+}
+if (txTimestampToggle) {
+    txTimestampToggle.addEventListener('change', () => {
+        settings.txTimestamp = txTimestampToggle.checked;
+        saveSettings();
+    });
+}
+if (confirmClearToggle) {
+    confirmClearToggle.addEventListener('change', () => {
+        settings.confirmClear = confirmClearToggle.checked;
+        saveSettings();
+    });
+}
+if (confirmDeleteToggle) {
+    confirmDeleteToggle.addEventListener('change', () => {
+        settings.confirmDelete = confirmDeleteToggle.checked;
+        saveSettings();
+    });
+}
+if (charEncodingSelect) {
+    charEncodingSelect.addEventListener('change', () => {
+        settings.charEncoding = charEncodingSelect.value;
         saveSettings();
     });
 }
@@ -1226,8 +1272,38 @@ const state = {
     cmdRows: 1,
     cmdIntervalMap: new Map(),
     cmdGroupsMeta: loadCmdGroupsMeta(),
-    paneOrder: []
+    paneOrder: [],
+    virtualPairs: new Map(), // pairId => { pairId, portA, portB }
 };
+
+// ========== 虚拟串口对辅助 ==========
+function getVirtualPairIdForPane(paneId) {
+    for (const [pairId, pair] of state.virtualPairs) {
+        if (paneId === `tcp://127.0.0.1:${pair.portA}` || paneId === `tcp://127.0.0.1:${pair.portB}`) {
+            return pairId;
+        }
+    }
+    return null;
+}
+
+async function destroyVirtualPairAndPeer(currentPaneId) {
+    const pairId = getVirtualPairIdForPane(currentPaneId);
+    if (!pairId) return;
+    const pair = state.virtualPairs.get(pairId);
+    if (!pair) return;
+    const idA = `tcp://127.0.0.1:${pair.portA}`;
+    const idB = `tcp://127.0.0.1:${pair.portB}`;
+    const peerId = currentPaneId === idA ? idB : idA;
+    // 同时删除对端面板
+    if (peerId !== currentPaneId && state.panes.has(peerId)) {
+        const peerPane = state.panes.get(peerId);
+        if (peerPane) peerPane.el.remove();
+        state.panes.delete(peerId);
+        if (state.activeId === peerId) setActive(null);
+    }
+    state.virtualPairs.delete(pairId);
+    try { await window.api.virtualPort.destroy(pairId); } catch { }
+}
 
 function promotePaneToFront(id) {
     const arr = state.paneOrder;
@@ -1396,7 +1472,7 @@ function echoIfEnabled(id, text) {
     if (!echo || !echo.checked) return;
 
     const ts = nowTs();
-    const addText = `[${ts}] ${text}\n`;
+    const addText = (settings.txTimestamp !== false ? `[${ts}] ` : '') + text + '\n';
 
     pane.textBuffer += addText;
     pane.hexBuffer += addText;
@@ -2525,8 +2601,10 @@ function refreshPanelList() {
         const bClear = document.createElement('button');
         bClear.textContent = '清空';
         bClear.onclick = async () => {
-            const ok = await uiConfirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`, { danger: true, okText: '清空' });
-            if (!ok) { safeRefocusInput(); return; }
+            if (settings.confirmClear !== false) {
+                const ok = await uiConfirm(`确定要清空面板 "${pane.info.name}" 的数据吗？`, { danger: true, okText: '清空' });
+                if (!ok) { safeRefocusInput(); return; }
+            }
             const body = pane.el.querySelector('.body');
             body.innerHTML = '';
             pane.logs = []; pane.chunks = [];
@@ -2538,10 +2616,13 @@ function refreshPanelList() {
         const bDel = document.createElement('button');
         bDel.textContent = '删除';
         bDel.onclick = async () => {
-            const ok = await uiConfirm(`确定删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
-            if (!ok) { safeRefocusInput(); return; }
+            if (settings.confirmDelete !== false) {
+                const ok = await uiConfirm(`确定删除面板 "${pane.info.name}" 吗？`, { danger: true, okText: '删除' });
+                if (!ok) { safeRefocusInput(); return; }
+            }
             pane.el.remove();
             state.panes.delete(id);
+            await destroyVirtualPairAndPeer(id);
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
             refreshPanelList();
@@ -2674,7 +2755,8 @@ function formatBytes(bytes, mode = 'text') {
         if (!str.endsWith('\n')) str += ' ';
         return str;
     }
-    try { return new TextDecoder('utf-8', { fatal: false }).decode(bytes); }
+    const enc = (settings && settings.charEncoding) ? settings.charEncoding : 'utf-8';
+    try { return new TextDecoder(enc, { fatal: false }).decode(bytes); }
     catch { return Array.from(bytes).map(b => (b >= 32 && b <= 126) ? String.fromCharCode(b) : '.').join(''); }
 }
 
@@ -2694,9 +2776,10 @@ window.api.serial.onData(({ id, bytes }) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
+        const useTs = withTs && (settings.rxTimestamp !== false);
 
-        const addText = (withTs ? `[${ts}] ` : '') + textStr;
-        const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
+        const addText = (useTs ? `[${ts}] ` : '') + textStr;
+        const addHex = (useTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
         pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
@@ -2752,9 +2835,10 @@ window.api.tcp.onData(({ id, bytes }) => {
         const ts = nowTs();
         const textStr = formatBytes(bytes, 'text');
         const hexStr = formatBytes(bytes, 'hex');
+        const useTs = withTs && (settings.rxTimestamp !== false);
 
-        const addText = (withTs ? `[${ts}] ` : '') + textStr;
-        const addHex = (withTs ? `[${ts}] ` : '') + hexStr;
+        const addText = (useTs ? `[${ts}] ` : '') + textStr;
+        const addHex = (useTs ? `[${ts}] ` : '') + hexStr;
         pane.textBuffer += addText;
         pane.hexBuffer += addHex;
         pane.chunks.push({ text: addText, hex: addHex, isEcho: false });
@@ -2801,8 +2885,9 @@ function showData(id, bytes) {
     const ts = nowTs();
     const textStr = formatBytes(bytes, 'text');
     const hexStr = formatBytes(bytes, 'hex');
-    const addText = `[${ts}]\n` + textStr + '\n';
-    const addHex = `[${ts}]\n` + hexStr + '\n';
+    const tsPrefix = (settings.rxTimestamp !== false) ? `[${ts}]\n` : '';
+    const addText = tsPrefix + textStr + '\n';
+    const addHex = tsPrefix + hexStr + '\n';
 
     pane.textBuffer += addText;
     pane.hexBuffer += addHex;
@@ -3009,6 +3094,33 @@ async function refreshPortsCombo() {
 }
 btnRefreshPorts.addEventListener('click', refreshPortsCombo);
 
+// ========== 新建虚拟串口对 ==========
+const btnNewVPort = document.getElementById('btnNewVPort');
+btnNewVPort.addEventListener('click', async () => {
+    const r = await window.api.virtualPort.create();
+    if (!r || !r.ok) {
+        alert('创建虚拟串口对失败: ' + (r && r.error ? r.error : '未知错误'));
+        return;
+    }
+    state.virtualPairs.set(r.pairId, { pairId: r.pairId, portA: r.portA, portB: r.portB });
+    const num = parseInt(r.pairId.replace('vp-', ''), 10);
+    const idA = `tcp://127.0.0.1:${r.portA}`;
+    const idB = `tcp://127.0.0.1:${r.portB}`;
+    const nameA = `虚拟 ${num}-A`;
+    const nameB = `虚拟 ${num}-B`;
+    createPane(idA, nameA);
+    createPane(idB, nameB);
+    // 自动连接两个面板
+    for (const pid of [idA, idB]) {
+        const pane = state.panes.get(pid);
+        if (pane) {
+            const btn = pane.el.querySelector('.btnToggle');
+            if (btn) btn.click();
+        }
+    }
+    window.api.config.save(exportPanelsConfig());
+});
+
 inputData.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
@@ -3046,8 +3158,8 @@ btnSend.addEventListener('click', async () => {
             return;
         }
         const res = (pane.type === 'tcp')
-            ? await window.api.tcp.write(id, data, mode, append)
-            : await window.api.serial.write(id, data, mode, append);
+            ? await window.api.tcp.write(id, data, mode, append, settings.charEncoding || 'utf-8')
+            : await window.api.serial.write(id, data, mode, append, settings.charEncoding || 'utf-8');
         if (!res.ok) {
             log('发送失败：' + res.error);
             return;
@@ -3395,8 +3507,8 @@ async function sendCommand(cmd, cardEl) {
     const pane = state.panes.get(id);
     const doWrite = (data, mode = 'text', append = append) =>
     (pane.type === 'tcp'
-        ? window.api.tcp.write(id, data, mode, append)
-        : window.api.serial.write(id, data, mode, append));
+        ? window.api.tcp.write(id, data, mode, append, settings.charEncoding || 'utf-8')
+        : window.api.serial.write(id, data, mode, append, settings.charEncoding || 'utf-8'));
     if (repeating) {
         if (state.cmdIntervalMap.has(cmd.id)) {
             clearInterval(state.cmdIntervalMap.get(cmd.id));
@@ -4028,6 +4140,15 @@ window.addEventListener('message', (event) => {
     const saved = await window.api.config.load();
     state.savedConfig = Array.isArray(saved) ? saved : [];
     state.listOrder = state.savedConfig.map(p => p.id || p.path);
+
+    // 恢复虚拟串口对
+    try {
+        const restoredPairs = await window.api.virtualPort.restore();
+        for (const p of restoredPairs) {
+            state.virtualPairs.set(p.pairId, { pairId: p.pairId, portA: p.portA, portB: p.portB });
+        }
+    } catch { }
+
     state.savedConfig.forEach(p => {
         const id = p.id || p.path;
         const name = p.name || id || '';
@@ -4424,7 +4545,7 @@ window.addEventListener('message', (event) => {
 
         // --- 修改点：定义激活逻辑 ---
         const activateBrowserPane = () => {
-            // 1. 调用 setActive(null) 重置底部状态为“未选择”，并清除所有面板的 active 样式
+            // 1. 调用 setActive(null) 重置底部状态为"未选择"，并清除所有面板的 active 样式
             setActive(null);
 
             // 2. 手动给自己加上 active 样式（变蓝）
@@ -4610,6 +4731,11 @@ window.addEventListener('message', (event) => {
                         if (btn) btn.click();
                     });
 
+                    addItem('🔗 新建虚拟串口对', () => {
+                        const btn = document.getElementById('btnNewVPort');
+                        if (btn) btn.click();
+                    });
+
                     addItem('🌐 新建浏览器页面', async () => {
                         const url = await uiPrompt('请输入网址 (例如 baidu.com)', { title: '新建浏览器', defaultValue: 'https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/' });
                         if (url) createBrowserPane(url);
@@ -4703,8 +4829,10 @@ window.addEventListener('message', (event) => {
             });
 
             addItem('清空面板', async () => {
-                const ok = await uiConfirm(`确定要清空面板 “${pane.info.name}” 的数据吗？`, { danger: true, okText: '清空' });
-                if (!ok) return;
+                if (settings.confirmClear !== false) {
+                    const ok = await uiConfirm(`确定要清空面板 "${pane.info.name}" 的数据吗？`, { danger: true, okText: '清空' });
+                    if (!ok) return;
+                }
                 const b = pane.el.querySelector('.body');
                 if (b) b.innerHTML = '';
                 pane.logs = [];
@@ -4716,10 +4844,13 @@ window.addEventListener('message', (event) => {
             });
 
             addItem('删除面板', async () => {
-                const ok = await uiConfirm(`确定删除面板 “${pane.info.name}” 吗？`, { danger: true, okText: '删除' });
-                if (!ok) return;
+                if (settings.confirmDelete !== false) {
+                    const ok = await uiConfirm(`确定删除面板 "${pane.info.name}" 吗？`, { danger: true, okText: '删除' });
+                    if (!ok) return;
+                }
                 pane.el.remove();
                 state.panes.delete(currentPaneId);
+                await destroyVirtualPairAndPeer(currentPaneId);
                 window.api.config.save(exportPanelsConfig());
                 if (state.activeId === currentPaneId) setActive(null);
                 refreshPanelList();
@@ -5411,7 +5542,7 @@ async function refreshScriptList() {
             refreshScriptList();
             if (!currentScript) {
                 currentScriptName.textContent = '（未选中）';
-                vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击“新建”</div>';
+                vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击"新建"</div>';
             } else {
                 checkPlaceholder();
             }
@@ -5442,7 +5573,7 @@ async function refreshScriptList() {
             const defaultBlocks = [
                 {
                     type: 'comment',
-                    text: '这是一个示例脚本。作用是一直监听串口收到的数据。每次收到的数据时，如果包含“123”则回复收到，否则则回复未收到。（循环次数0意为无限循环。）'
+                    text: '这是一个示例脚本。作用是一直监听串口收到的数据。每次收到的数据时，如果包含"123"则回复收到，否则则回复未收到。（循环次数0意为无限循环。）'
                 },
                 {
                     type: 'loop',
@@ -5530,13 +5661,13 @@ async function refreshScriptList() {
 
     if (btnScriptDelete) btnScriptDelete.onclick = async () => {
         if (!currentScript) return;
-        if (await uiConfirm(`确定删除脚本 “${currentScript}” 吗？`, { danger: true })) {
+        if (await uiConfirm(`确定删除脚本 "${currentScript}" 吗？`, { danger: true })) {
             await window.api.scripts.delete(currentScript);
             currentScript = null;
             currentScriptName.textContent = '（未选中）';
             currentScriptName.style.color = "";
             currentScriptName.style.fontWeight = "";
-            vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击“新建”</div>';
+            vsCanvas.innerHTML = '<div class="vs-placeholder">请从右侧选择脚本，或点击"新建"</div>';
 
             await refreshScriptList();
             updateEditorState('ScriptDeleted');

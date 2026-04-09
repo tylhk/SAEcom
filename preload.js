@@ -9,7 +9,7 @@ function decodeBase64ToUint8Array(b64) {
 contextBridge.exposeInMainWorld('api', {
   tcp: {
     open: (host, port, options) => ipcRenderer.invoke('tcp:open', { host, port, options }),
-    write: (id, data, mode, append) => ipcRenderer.invoke('tcp:write', { id, data, mode, append }),
+    write: (id, data, mode, append, encoding) => ipcRenderer.invoke('tcp:write', { id, data, mode, append, encoding }),
     close: (id) => ipcRenderer.invoke('tcp:close', { id }),
     onData: (cb) => ipcRenderer.on('tcp:data', (_e, p) => cb({ id: p.id, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
     onEvent: (cb) => ipcRenderer.on('tcp:event', (_e, p) => cb(p)),
@@ -29,8 +29,8 @@ contextBridge.exposeInMainWorld('api', {
     list: () => ipcRenderer.invoke('serial:list'),
     open: (path, options) => ipcRenderer.invoke('serial:open', { path, options }),
     close: (id) => ipcRenderer.invoke('serial:close', { id }),
-    write: (id, data, mode = 'text', append = 'none') =>
-      ipcRenderer.invoke('serial:write', { id, data, mode, append }),
+    write: (id, data, mode = 'text', append = 'none', encoding = 'utf-8') =>
+      ipcRenderer.invoke('serial:write', { id, data, mode, append, encoding }),
     onData: (cb) => {
       ipcRenderer.on('serial:data', (_e, payload) => {
         cb({ id: payload.id, bytes: decodeBase64ToUint8Array(payload.base64), ts: payload.ts });
@@ -96,6 +96,12 @@ contextBridge.exposeInMainWorld('api', {
   theme: {
     set: (dark) => ipcRenderer.send('theme:set', { dark }),
     onApply: (cb) => ipcRenderer.on('theme:apply', (_e, payload) => cb(payload))
+  },
+  virtualPort: {
+    create: () => ipcRenderer.invoke('virtualPort:create'),
+    destroy: (pairId) => ipcRenderer.invoke('virtualPort:destroy', { pairId }),
+    list: () => ipcRenderer.invoke('virtualPort:list'),
+    restore: () => ipcRenderer.invoke('virtualPort:restore'),
   }
 
 });
