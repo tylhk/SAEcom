@@ -173,7 +173,7 @@ function showLimitDialog(currentVal, isEnabled) {
         dlg.innerHTML = `
             <div class="box">
                 <div class="title">设置数据保留条数</div>
-                <div class="msg">请输入要保留的最新数据行数：<br><span style="font-size:12px;color:#909399">(录制日志时，此设置优先级高于默认的100条限制)</span></div>
+                <div class="msg">请输入要保留的最新数据行数：<br><span style="font-size:12px;color:#909399">(该设置优先级高于实时保存数据时的默认限制)</span></div>
                 <input class="prompt-input" type="number" value="${currentVal}" min="10" step="100">
                 <div class="actions">
                     ${isEnabled ? '<button class="danger btn-off" style="margin-right:auto">关闭限制</button>' : ''}
@@ -1273,37 +1273,7 @@ const state = {
     cmdIntervalMap: new Map(),
     cmdGroupsMeta: loadCmdGroupsMeta(),
     paneOrder: [],
-    virtualPairs: new Map(), // pairId => { pairId, portA, portB }
 };
-
-// ========== 虚拟串口对辅助 ==========
-function getVirtualPairIdForPane(paneId) {
-    for (const [pairId, pair] of state.virtualPairs) {
-        if (paneId === `tcp://127.0.0.1:${pair.portA}` || paneId === `tcp://127.0.0.1:${pair.portB}`) {
-            return pairId;
-        }
-    }
-    return null;
-}
-
-async function destroyVirtualPairAndPeer(currentPaneId) {
-    const pairId = getVirtualPairIdForPane(currentPaneId);
-    if (!pairId) return;
-    const pair = state.virtualPairs.get(pairId);
-    if (!pair) return;
-    const idA = `tcp://127.0.0.1:${pair.portA}`;
-    const idB = `tcp://127.0.0.1:${pair.portB}`;
-    const peerId = currentPaneId === idA ? idB : idA;
-    // 同时删除对端面板
-    if (peerId !== currentPaneId && state.panes.has(peerId)) {
-        const peerPane = state.panes.get(peerId);
-        if (peerPane) peerPane.el.remove();
-        state.panes.delete(peerId);
-        if (state.activeId === peerId) setActive(null);
-    }
-    state.virtualPairs.delete(pairId);
-    try { await window.api.virtualPort.destroy(pairId); } catch { }
-}
 
 function promotePaneToFront(id) {
     const arr = state.paneOrder;
@@ -1423,6 +1393,98 @@ if (btnCheckUpdate) {
     });
 }
 
+// ========== 自动更新进度弹窗 ==========
+let updateDialog = null;
+let updateProgressFill = null;
+let updateProgressText = null;
+let updateCancelButton = null;
+
+function createUpdateDialog() {
+    if (updateDialog) return updateDialog;
+
+    const dlg = document.createElement('dialog');
+    dlg.className = 'sys-modal update-modal';
+    dlg.innerHTML = `
+        <div class="update-box">
+            <div class="update-title">正在更新</div>
+            <div class="update-body">
+                <div class="update-progress-wrap">
+                    <div class="update-progress-fill" id="updateProgressFill"></div>
+                </div>
+                <div class="update-progress-text" id="updateProgressText">准备中...</div>
+            </div>
+            <div class="update-footer" id="updateFooter">
+                <button class="update-cancel-btn" id="updateCancelBtn">取消下载</button>
+            </div>
+        </div>
+    `;
+    document.body.appendChild(dlg);
+
+    updateProgressFill = dlg.querySelector('#updateProgressFill');
+    updateProgressText = dlg.querySelector('#updateProgressText');
+    updateCancelButton = dlg.querySelector('#updateCancelBtn');
+    const updateFooter = dlg.querySelector('#updateFooter');
+
+    updateCancelButton.addEventListener('click', () => {
+        window.api.app.cancelUpdate();
+        closeUpdateDialog();
+        uiAlert('更新已取消');
+    });
+
+    updateDialog = dlg;
+    return dlg;
+}
+
+function showUpdateDialog() {
+    const dlg = createUpdateDialog();
+    // 重置状态
+    updateProgressFill.style.width = '0%';
+    updateProgressFill.classList.remove('indeterminate');
+    updateProgressText.textContent = '准备中...';
+    updateCancelButton.style.display = '';
+    dlg.querySelector('#updateFooter').style.display = '';
+    dlg.showModal();
+}
+
+function closeUpdateDialog() {
+    if (updateDialog) {
+        try { updateDialog.close(); } catch { }
+    }
+}
+
+function updateProgressUI(data) {
+    if (!updateDialog || !updateDialog.open) return;
+
+    if (data.state === 'downloading') {
+        const pct = Math.max(0, Math.min(100, data.percent));
+        updateProgressFill.style.width = pct + '%';
+        updateProgressFill.classList.remove('indeterminate');
+        updateProgressText.textContent = pct + '%';
+    } else if (data.state === 'installing') {
+        updateProgressFill.classList.add('indeterminate');
+        updateProgressFill.style.width = '100%';
+        updateProgressText.textContent = '正在安装...';
+        updateCancelButton.style.display = 'none';
+    }
+}
+
+// 监听主进程的更新进度
+if (window.api.app.onUpdateProgress) {
+    window.api.app.onUpdateProgress((data) => {
+        if (!updateDialog || !updateDialog.open) {
+            showUpdateDialog();
+        }
+        updateProgressUI(data);
+    });
+}
+
+if (window.api.app.onUpdateError) {
+    window.api.app.onUpdateError((data) => {
+        closeUpdateDialog();
+        uiAlert('更新失败: ' + (data.message || '未知错误'));
+    });
+}
+
 if (btnChangelog) {
     btnChangelog.addEventListener('click', async () => {
         btnChangelog.classList.remove('shining-btn');
@@ -1499,9 +1561,9 @@ function updateLogBtnUI(pane) {
     btnRealtimeLog.disabled = false;
     
     if (pane.logging && pane.logging.active) {
-        btnRealtimeLog.innerHTML = '<span class="icon-spin">●</span> 停止录制';
+        btnRealtimeLog.innerHTML = '<span class="icon-spin">●</span> 停止写入';
         btnRealtimeLog.classList.add('danger');
-        btnRealtimeLog.title = `正在录制到: ${pane.logging.path}`;
+        btnRealtimeLog.title = `正在写入到: ${pane.logging.path}`;
     } else {
         btnRealtimeLog.textContent = '实时保存数据';
         btnRealtimeLog.classList.remove('danger');
@@ -1515,7 +1577,7 @@ async function toggleLogging(pane) {
     if (pane.logging && pane.logging.active) {
         pane.logging.active = false;
         pane.logging.path = null;
-        appendSysLine(pane, '[系统] 已停止实时数据录制');
+        appendSysLine(pane, '[系统] 已停止实时保存数据');
         
         const badge = pane.el.querySelector('.log-badge');
         if (badge) badge.remove();
@@ -1530,7 +1592,7 @@ async function toggleLogging(pane) {
     if (res.canceled || !res.filePath) return;
 
     pane.logging = { active: true, path: res.filePath };
-    appendSysLine(pane, `[系统] 开始录制到: ${res.filePath}\n[系统] 录制期间界面仅保留最新100条数据。`);
+    appendSysLine(pane, `[系统] 开始写入到: ${res.filePath}\n[系统] 实时保存期间界面仅保留最新100条数据。`);
 
     const titleBtns = pane.el.querySelector('.title .btns');
     if (titleBtns && !pane.el.querySelector('.log-badge')) {
@@ -2622,7 +2684,6 @@ function refreshPanelList() {
             }
             pane.el.remove();
             state.panes.delete(id);
-            await destroyVirtualPairAndPeer(id);
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
             refreshPanelList();
@@ -3093,33 +3154,6 @@ async function refreshPortsCombo() {
     fillPortSelect(state.activeId);
 }
 btnRefreshPorts.addEventListener('click', refreshPortsCombo);
-
-// ========== 新建虚拟串口对 ==========
-const btnNewVPort = document.getElementById('btnNewVPort');
-btnNewVPort.addEventListener('click', async () => {
-    const r = await window.api.virtualPort.create();
-    if (!r || !r.ok) {
-        alert('创建虚拟串口对失败: ' + (r && r.error ? r.error : '未知错误'));
-        return;
-    }
-    state.virtualPairs.set(r.pairId, { pairId: r.pairId, portA: r.portA, portB: r.portB });
-    const num = parseInt(r.pairId.replace('vp-', ''), 10);
-    const idA = `tcp://127.0.0.1:${r.portA}`;
-    const idB = `tcp://127.0.0.1:${r.portB}`;
-    const nameA = `虚拟 ${num}-A`;
-    const nameB = `虚拟 ${num}-B`;
-    createPane(idA, nameA);
-    createPane(idB, nameB);
-    // 自动连接两个面板
-    for (const pid of [idA, idB]) {
-        const pane = state.panes.get(pid);
-        if (pane) {
-            const btn = pane.el.querySelector('.btnToggle');
-            if (btn) btn.click();
-        }
-    }
-    window.api.config.save(exportPanelsConfig());
-});
 
 inputData.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -4141,14 +4175,6 @@ window.addEventListener('message', (event) => {
     state.savedConfig = Array.isArray(saved) ? saved : [];
     state.listOrder = state.savedConfig.map(p => p.id || p.path);
 
-    // 恢复虚拟串口对
-    try {
-        const restoredPairs = await window.api.virtualPort.restore();
-        for (const p of restoredPairs) {
-            state.virtualPairs.set(p.pairId, { pairId: p.pairId, portA: p.portA, portB: p.portB });
-        }
-    } catch { }
-
     state.savedConfig.forEach(p => {
         const id = p.id || p.path;
         const name = p.name || id || '';
@@ -4731,11 +4757,6 @@ window.addEventListener('message', (event) => {
                         if (btn) btn.click();
                     });
 
-                    addItem('🔗 新建虚拟串口对', () => {
-                        const btn = document.getElementById('btnNewVPort');
-                        if (btn) btn.click();
-                    });
-
                     addItem('🌐 新建浏览器页面', async () => {
                         const url = await uiPrompt('请输入网址 (例如 baidu.com)', { title: '新建浏览器', defaultValue: 'https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/' });
                         if (url) createBrowserPane(url);
@@ -4850,7 +4871,6 @@ window.addEventListener('message', (event) => {
                 }
                 pane.el.remove();
                 state.panes.delete(currentPaneId);
-                await destroyVirtualPairAndPeer(currentPaneId);
                 window.api.config.save(exportPanelsConfig());
                 if (state.activeId === currentPaneId) setActive(null);
                 refreshPanelList();
@@ -4891,13 +4911,14 @@ function parseChangelogMarkdown(md) {
         .replace(/^## (.*$)/gim, '<h2>$1</h2>')
         .replace(/^### (.*$)/gim, '<h3>$1</h3>');
 
-    html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED).*?\*\*/gim, (match, p1) => {
+    html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED|FEAT|BUG|HOTFIX|REFACTOR|PERF|STYLE|DOCS|TEST|CI|BUILD|CHORE|DEPS|SECURITY|REVERT|BREAKING|IMPROVE|TWEAK|INIT|MIGRATE).*?\*\*/gim, (match, p1) => {
         return `<div class="tag-line">${p1}</div>`;
     });
 
     html = html
         .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
         .replace(/`(.*?)`/gim, '<code>$1</code>')
+        .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener">$1</a>')
         .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
 
     html = html.replace(/^\s*-\s+(.*)$/gim, '<li>$1</li>');

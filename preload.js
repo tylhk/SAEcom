@@ -86,7 +86,10 @@ contextBridge.exposeInMainWorld('api', {
   },
   app: {
     getVersion: () => ipcRenderer.invoke('app:version'),
-    checkUpdate: () => ipcRenderer.send('app:checkUpdate')
+    checkUpdate: () => ipcRenderer.send('app:checkUpdate'),
+    onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
+    onUpdateError: (cb) => ipcRenderer.on('update:error', (_e, p) => cb(p)),
+    cancelUpdate: () => ipcRenderer.send('update:cancel')
   },
   changelog: {
     open: () => ipcRenderer.send('changelog:open'),
@@ -96,12 +99,6 @@ contextBridge.exposeInMainWorld('api', {
   theme: {
     set: (dark) => ipcRenderer.send('theme:set', { dark }),
     onApply: (cb) => ipcRenderer.on('theme:apply', (_e, payload) => cb(payload))
-  },
-  virtualPort: {
-    create: () => ipcRenderer.invoke('virtualPort:create'),
-    destroy: (pairId) => ipcRenderer.invoke('virtualPort:destroy', { pairId }),
-    list: () => ipcRenderer.invoke('virtualPort:list'),
-    restore: () => ipcRenderer.invoke('virtualPort:restore'),
   }
 
 });

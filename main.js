@@ -725,6 +725,18 @@ function versionCompare(v1, v2) {
   return 0;
 }
 
+// ========== 自动更新 ==========
+let activeDownloadRequest = null;
+
+ipcMain.on('update:cancel', () => {
+  if (activeDownloadRequest) {
+    console.log('[Updater] Download cancelled by user');
+    activeDownloadRequest.destroy();
+    activeDownloadRequest = null;
+    mainWindow?.setProgressBar(-1);
+  }
+});
+
 function checkForUpdates(isManual = false) {
   console.log('[Updater] Checking for updates...');
 
@@ -770,23 +782,21 @@ function checkForUpdates(isManual = false) {
       const savePath = path.join(os.tmpdir(), saveName);
 
       if (fs.existsSync(savePath)) {
-        console.log('[Updater] File already exists, skipping download.');
-        promptToInstall(latestVer, savePath);
-      } else {
-        const actionText = versionCompare(latestVer, currentVer) > 0 ? '升级' : '变更';
-        dialog.showMessageBox(mainWindow, {
-          type: 'info',
-          title: '发现新版本',
-          message: `检测到新版本 (${latestVer})。\n是否立即下载更新？`,
-          buttons: [`下载${actionText}`, '稍后'],
-          defaultId: 0,
-          cancelId: 1
-        }).then(({ response }) => {
-          if (response === 0) {
-            downloadUpdate(latestDownloadUrl, savePath, latestVer);
-          }
-        });
+        fs.unlinkSync(savePath); // 删除旧包，重新下载
       }
+      // 无论手动还是自动检查，都先弹询问框
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '发现新版本',
+        message: `检测到新版本 (${latestVer})。\n是否立即下载更新？`,
+        buttons: ['下载升级', '稍后'],
+        defaultId: 0,
+        cancelId: 1
+      }).then(({ response }) => {
+        if (response === 0) {
+          downloadUpdate(latestDownloadUrl, savePath, latestVer);
+        }
+      });
     });
   });
 
@@ -797,8 +807,6 @@ function checkForUpdates(isManual = false) {
 }
 
 function downloadUpdate(fileUrl, savePath, version) {
-  if (mainWindow) mainWindow.setProgressBar(0.1);
-
   const encodedUrl = new URL(fileUrl).href;
   console.log(`[Updater] Downloading to: ${savePath}`);
 
@@ -811,7 +819,7 @@ function downloadUpdate(fileUrl, savePath, version) {
       if (response.headers.location) {
         downloadUpdate(response.headers.location, savePath, version);
       } else {
-        dialog.showErrorBox('更新失败', '服务器重定向错误。');
+        sendUpdateError('服务器重定向错误。');
       }
       return;
     }
@@ -819,41 +827,50 @@ function downloadUpdate(fileUrl, savePath, version) {
     if (response.statusCode !== 200) {
       file.close();
       fs.unlink(savePath, () => { });
-      dialog.showErrorBox('更新失败', `HTTP 状态码: ${response.statusCode}`);
-      if (mainWindow) mainWindow.setProgressBar(-1);
+      sendUpdateError(`HTTP 状态码: ${response.statusCode}`);
       return;
     }
+
+    const totalBytes = parseInt(response.headers['content-length'], 10) || 0;
+    let downloadedBytes = 0;
+
+    mainWindow?.webContents.send('update:progress', { percent: 0, state: 'downloading' });
+    if (mainWindow) mainWindow.setProgressBar(0.1);
+
+    response.on('data', (chunk) => {
+      downloadedBytes += chunk.length;
+      if (totalBytes > 0) {
+        const pct = Math.min(100, Math.round((downloadedBytes / totalBytes) * 100));
+        mainWindow?.webContents.send('update:progress', { percent: pct, state: 'downloading' });
+        if (mainWindow) mainWindow.setProgressBar(pct / 100);
+      }
+    });
 
     response.pipe(file);
 
     file.on('finish', () => {
       file.close(() => {
-        if (mainWindow) mainWindow.setProgressBar(-1);
-        promptToInstall(version, savePath);
+        activeDownloadRequest = null;
+        mainWindow?.webContents.send('update:progress', { percent: -1, state: 'installing' });
+        if (mainWindow) mainWindow.setProgressBar(2); // 不确定进度
+        // 给渲染进程一点时间显示"正在安装..."
+        setTimeout(() => runInstallerAndQuit(savePath), 500);
       });
     });
   });
 
   request.on('error', (err) => {
     fs.unlink(savePath, () => { });
-    if (mainWindow) mainWindow.setProgressBar(-1);
-    dialog.showErrorBox('更新失败', '网络错误：' + err.message);
+    activeDownloadRequest = null;
+    sendUpdateError('网络错误：' + err.message);
   });
+
+  activeDownloadRequest = request;
 }
 
-function promptToInstall(version, filePath) {
-  dialog.showMessageBox(mainWindow, {
-    type: 'question',
-    title: '准备安装',
-    message: `新版本 ${version} 已准备就绪。\n\n点击【立即安装】将自动退出程序并开始更新。`,
-    buttons: ['立即安装', '稍后安装'],
-    defaultId: 0,
-    cancelId: 1
-  }).then(({ response }) => {
-    if (response === 0) {
-      runInstallerAndQuit(filePath);
-    }
-  });
+function sendUpdateError(message) {
+  if (mainWindow) mainWindow.setProgressBar(-1);
+  mainWindow?.webContents.send('update:error', { message });
 }
 
 function runInstallerAndQuit(filePath) {
@@ -888,137 +905,4 @@ function escapeRegExp(string) {
   return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-// ========== 虚拟串口对 ==========
-const virtualPairs = new Map(); // pairId => { pairId, portA, portB, server, clients: { A: socket|null, B: socket|null } }
-const VPORT_BASE = 19901;
-const VPORT_PATH = path.join(app.getPath('userData'), 'virtual-pairs.json');
 
-function loadVirtualPairsConfig() {
-  try { return JSON.parse(fs.readFileSync(VPORT_PATH, 'utf-8')); } catch { return []; }
-}
-function saveVirtualPairsConfig(pairs) {
-  try { fs.writeFileSync(VPORT_PATH, JSON.stringify(pairs, null, 2), 'utf-8'); } catch (e) { console.error(e); }
-}
-
-function createVirtualPair(pairId) {
-  if (virtualPairs.has(pairId)) {
-    return { ok: true, pairId, portA: virtualPairs.get(pairId).portA, portB: virtualPairs.get(pairId).portB, already: true };
-  }
-
-  const num = parseInt(pairId.replace('vp-', ''), 10) || 1;
-  const portA = VPORT_BASE + (num - 1) * 2;
-  const portB = portA + 1;
-
-  const srvA = net.createServer();
-  const srvB = net.createServer();
-  let clientA = null;
-  let clientB = null;
-
-  function relayData(src, dst) {
-    if (dst && !dst.destroyed) {
-      try { dst.write(src); } catch { }
-    }
-  }
-
-  srvA.on('connection', (sock) => {
-    try { sock.setNoDelay(true); } catch { }
-    clientA = sock;
-    sock.on('data', (buf) => relayData(buf, clientB));
-    sock.on('close', () => { clientA = null; });
-    sock.on('error', () => { try { sock.destroy(); } catch { } clientA = null; });
-  });
-  srvA.on('error', (err) => { console.error('[VirtualPort] Server A error:', err?.message || err); });
-
-  srvB.on('connection', (sock) => {
-    try { sock.setNoDelay(true); } catch { }
-    clientB = sock;
-    sock.on('data', (buf) => relayData(buf, clientA));
-    sock.on('close', () => { clientB = null; });
-    sock.on('error', () => { try { sock.destroy(); } catch { } clientB = null; });
-  });
-  srvB.on('error', (err) => { console.error('[VirtualPort] Server B error:', err?.message || err); });
-
-  return new Promise((resolve, reject) => {
-    let pending = 2;
-    let failed = false;
-
-    function done(err) {
-      if (failed) return;
-      if (err) {
-        failed = true;
-        try { srvA.close(); } catch { }
-        try { srvB.close(); } catch { }
-        reject({ ok: false, error: err?.message || String(err) });
-        return;
-      }
-      pending--;
-      if (pending === 0) {
-        virtualPairs.set(pairId, { pairId, portA, portB, serverA: srvA, serverB: srvB, clientA: null, clientB: null });
-        resolve({ ok: true, pairId, portA, portB });
-      }
-    }
-
-    srvA.listen(portA, '127.0.0.1', () => done()).on('error', (e) => done(e));
-    srvB.listen(portB, '127.0.0.1', () => done()).on('error', (e) => done(e));
-  });
-}
-
-function destroyVirtualPair(pairId) {
-  const pair = virtualPairs.get(pairId);
-  if (!pair) return;
-  try {
-    pair.serverA.close();
-    pair.serverB.close();
-  } catch { }
-  virtualPairs.delete(pairId);
-}
-
-function listVirtualPairs() {
-  const result = [];
-  for (const [id, pair] of virtualPairs) {
-    result.push({
-      pairId: id,
-      portA: pair.portA,
-      portB: pair.portB,
-    });
-  }
-  return result;
-}
-
-ipcMain.handle('virtualPort:create', async () => {
-  const saved = loadVirtualPairsConfig();
-  let pairId;
-  let num = 1;
-  while (true) {
-    pairId = `vp-${num}`;
-    if (!virtualPairs.has(pairId) && !saved.some(p => p.pairId === pairId)) break;
-    num++;
-  }
-  const r = await createVirtualPair(pairId);
-  if (r.ok) {
-    saved.push({ pairId: r.pairId, portA: r.portA, portB: r.portB });
-    saveVirtualPairsConfig(saved);
-  }
-  return r;
-});
-
-ipcMain.handle('virtualPort:destroy', async (_e, { pairId }) => {
-  destroyVirtualPair(pairId);
-  const saved = loadVirtualPairsConfig().filter(p => p.pairId !== pairId);
-  saveVirtualPairsConfig(saved);
-  return { ok: true };
-});
-
-ipcMain.handle('virtualPort:list', () => listVirtualPairs());
-
-ipcMain.handle('virtualPort:restore', async () => {
-  const saved = loadVirtualPairsConfig();
-  const results = [];
-  for (const cfg of saved) {
-    try {
-      const r = await createVirtualPair(cfg.pairId);
-      if (r.ok) results.push(r);
-    } catch { }
-  }
-  return results;
-});
