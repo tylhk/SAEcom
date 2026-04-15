@@ -4,8 +4,9 @@
   "description": "基于Electron开发的多面板串口助手/Serial port Assistant based on Electron",
   "main": "main.js",
   "scripts": {
-    "start": "electron .",
-    "dev": "electronmon .",
+    "start": "electron . --no-sandbox",
+    "dev": "electronmon . --no-sandbox",
+    "test": "node test/code-generator.test.js",
     "postinstall": "electron-builder install-app-deps",
     "rebuild": "electron-rebuild -f -w serialport",
     "pack": "electron-builder --dir",
@@ -15,7 +16,8 @@
     "dist:mac:universal": "electron-builder --mac universal"
   },
   "dependencies": {
-    "serialport": "^12.0.0"
+    "serialport": "^12.0.0",
+    "drawflow": "^0.0.59"
   },
   "devDependencies": {
     "electron": "^31.3.0",
