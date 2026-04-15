@@ -5,6 +5,8 @@
     <meta charset="UTF-8" />
     <title>串口助手</title>
     <link rel="stylesheet" href="./styles.css" />
+    <!-- Drawflow 流程图库 -->
+    <link rel="stylesheet" href="node_modules/drawflow/dist/drawflow.min.css">
 </head>
 
 <body>
@@ -301,47 +303,91 @@
                 </div>
             </div>
 
+            <!-- 画布工具栏 -->
+            <div class="flow-toolbar">
+                <button id="flowZoomOut" title="缩小">−</button>
+                <span id="flowZoomLevel">100%</span>
+                <button id="flowZoomIn" title="放大">+</button>
+                <button id="flowZoomReset" title="重置缩放">⟲</button>
+                <div class="flow-toolbar-sep"></div>
+                <button id="flowMaximize" title="最大化">⬜</button>
+            </div>
+
             <div class="vs-container">
-                <div class="vs-sidebar">
-                    <div class="vs-toolbox-category">基础功能</div>
+                <div class="flow-sidebar" id="flowSidebar">
+                    <div class="flow-category">📥 输入类</div>
+                    <div class="flow-template" draggable="true" data-node="input-serial"><span>接收串口</span></div>
+                    <div class="flow-template" draggable="true" data-node="input-tcp"><span>接收TCP</span></div>
+                    <div class="flow-template" draggable="true" data-node="input-manual"><span>手动输入</span></div>
+                    <div class="flow-template" draggable="true" data-node="input-file"><span>读取文件</span></div>
+                    <div class="flow-template" draggable="true" data-node="input-timer"><span>定时触发</span></div>
 
-                    <div class="vs-block-template" draggable="true" data-type="send">
-                        <div class="vs-tpl-content"><span class="icon">📤</span> 发送数据(Send)</div>
-                        <span class="vs-tpl-help" data-real-desc="向当前串口发送数据。支持文本/HEX，可自动加换行符。">?</span>
-                    </div>
+                    <div class="flow-category">🔄 转换类</div>
+                    <div class="flow-template" draggable="true" data-node="transform-hex"><span>HEX转换</span></div>
+                    <div class="flow-template" draggable="true" data-node="transform-base64"><span>Base64编解码</span></div>
+                    <div class="flow-template" draggable="true" data-node="transform-encoding"><span>编码转换</span></div>
+                    <div class="flow-template" draggable="true" data-node="transform-byteorder"><span>字节序转换</span></div>
+                    <div class="flow-template" draggable="true" data-node="transform-case"><span>大小写转换</span></div>
 
-                    <div class="vs-block-template" draggable="true" data-type="delay">
-                        <div class="vs-tpl-content"><span class="icon">⏱</span> 延时等待(Delay)</div>
-                        <span class="vs-tpl-help" data-real-desc="暂停脚本一段时间（毫秒）。仅暂停脚本，不会影响串口本身接收数据。">?</span>
-                    </div>
+                    <div class="flow-category">✂️ 分割类</div>
+                    <div class="flow-template" draggable="true" data-node="split-delimiter"><span>分隔符拆分</span></div>
+                    <div class="flow-template" draggable="true" data-node="split-length"><span>按长度拆分</span></div>
+                    <div class="flow-template" draggable="true" data-node="split-regex"><span>正则提取</span></div>
+                    <div class="flow-template" draggable="true" data-node="split-substring"><span>截取子串</span></div>
+                    <div class="flow-template" draggable="true" data-node="split-trimbytes"><span>去头尾字节</span></div>
 
-                    <div class="vs-block-template" draggable="true" data-type="comment">
-                        <div class="vs-tpl-content"><span class="icon">📝</span> 备注说明</div>
-                        <span class="vs-tpl-help" data-real-desc="添加一段注释文字，仅作为标记使用。">?</span>
-                    </div>
+                    <div class="flow-category">🔢 数值类</div>
+                    <div class="flow-template" draggable="true" data-node="numeric-base"><span>进制转换</span></div>
+                    <div class="flow-template" draggable="true" data-node="numeric-join"><span>字节拼接数值</span></div>
+                    <div class="flow-template" draggable="true" data-node="numeric-calc"><span>计算</span></div>
+                    <div class="flow-template" draggable="true" data-node="numeric-crc"><span>CRC校验</span></div>
+                    <div class="flow-template" draggable="true" data-node="numeric-length"><span>计算长度</span></div>
 
-                    <div class="vs-toolbox-category">逻辑控制</div>
+                    <div class="flow-category">📝 字符类</div>
+                    <div class="flow-template" draggable="true" data-node="string-concat"><span>字符串拼接</span></div>
+                    <div class="flow-template" draggable="true" data-node="string-replace"><span>字符串替换</span></div>
+                    <div class="flow-template" draggable="true" data-node="string-trim"><span>去除空白</span></div>
+                    <div class="flow-template" draggable="true" data-node="string-find"><span>查找匹配</span></div>
+                    <div class="flow-template" draggable="true" data-node="string-template"><span>格式化模板</span></div>
 
-                    <div class="vs-block-template" draggable="true" data-type="loop">
-                        <div class="vs-tpl-content"><span class="icon">🔁</span> 循环执行(For)</div>
-                        <span class="vs-tpl-help" data-real-desc="重复执行内部模块。次数设为0表示无限循环。">?</span>
-                    </div>
+                    <div class="flow-category">🔀 控制类</div>
+                    <div class="flow-template" draggable="true" data-node="control-if"><span>条件判断</span></div>
+                    <div class="flow-template" draggable="true" data-node="control-loop"><span>循环执行</span></div>
+                    <div class="flow-template" draggable="true" data-node="control-delay"><span>延时等待</span></div>
+                    <div class="flow-template" draggable="true" data-node="control-wait"><span>等待接收</span></div>
+                    <div class="flow-template" draggable="true" data-node="control-timeout"><span>超时控制</span></div>
 
-                    <div class="vs-block-template" draggable="true" data-type="if_contains">
-                        <div class="vs-tpl-content"><span class="icon">❓</span> 条件判断(If)</div>
-                        <span class="vs-tpl-help" data-real-desc="脚本运行到此处会暂停，直到下一次串口接收到数据。数据中匹配到相同字符串则视为匹配成功。">?</span>
-                    </div>
+                    <div class="flow-category">📤 输出类</div>
+                    <div class="flow-template" draggable="true" data-node="output-serial"><span>发送串口</span></div>
+                    <div class="flow-template" draggable="true" data-node="output-tcp"><span>发送TCP</span></div>
+                    <div class="flow-template" draggable="true" data-node="output-file"><span>写入文件</span></div>
+                    <div class="flow-template" draggable="true" data-node="output-log"><span>日志输出</span></div>
+                    <div class="flow-template" draggable="true" data-node="output-variable"><span>变量存储</span></div>
                 </div>
 
                 <div class="vs-canvas-wrapper">
-                    <div id="vsCanvas" class="vs-canvas root-dropzone">
+                    <!-- 旧的 block 系统（保留以兼容现有代码，隐藏） -->
+                    <div id="vsCanvas" class="vs-canvas root-dropzone" style="display:none;">
                         <div class="vs-placeholder">从左侧拖拽模块到此处</div>
                     </div>
+                    <!-- 新的 Drawflow 流程图编辑器 -->
+                    <div id="flowCanvas" class="parent-drawflow"></div>
                 </div>
 
                 <div class="vs-list-sidebar">
                     <div class="hint">脚本列表</div>
                     <ul id="scriptList"></ul>
+                </div>
+            </div>
+
+            <!-- 脚本输出面板 -->
+            <div class="script-output-panel" id="scriptOutputPanel">
+                <div class="script-output-header">
+                    <span class="output-title">📋 输出</span>
+                    <button class="output-clear-btn" id="btnOutputClear" title="清空">🗑️</button>
+                </div>
+                <div class="script-output-body" id="scriptOutputBody">
+                    <div class="output-placeholder">运行脚本后显示输出...</div>
                 </div>
             </div>
         </dialog>
@@ -508,6 +554,17 @@
         </dialog>
 
 
+        <script src="src/node-definitions.js"></script>
+        <script>
+            // 动态加载 code-generator.js，添加时间戳避免缓存
+            (function() {
+                var script = document.createElement('script');
+                script.src = 'src/code-generator.js?t=' + Date.now();
+                document.body.appendChild(script);
+            })();
+        </script>
+        <script src="node_modules/drawflow/dist/drawflow.min.js"></script>
+        <script src="src/flow-editor.js"></script>
         <script src="./renderer.js"></script>
     </div>
 </body>

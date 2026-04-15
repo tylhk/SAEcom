@@ -125,6 +125,10 @@ dist
 
 # Stores VSCode versions used for testing VSCode extensions
 .vscode-test
+.vscode/
+
+# Claude Code / Superpowers
+.superpowers/
 
 .workbuddy/
 # yarn v3

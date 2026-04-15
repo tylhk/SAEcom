@@ -13,7 +13,15 @@ contextBridge.exposeInMainWorld('api', {
     close: (id) => ipcRenderer.invoke('tcp:close', { id }),
     onData: (cb) => ipcRenderer.on('tcp:data', (_e, p) => cb({ id: p.id, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
     onEvent: (cb) => ipcRenderer.on('tcp:event', (_e, p) => cb(p)),
-  },  
+  },
+  tcpServer: {
+    start: (port) => ipcRenderer.invoke('tcpServer:start', { port }),
+    stop: (id) => ipcRenderer.invoke('tcpServer:stop', { id }),
+    status: (id) => ipcRenderer.invoke('tcpServer:status', { id }),
+    broadcast: (id, data, mode, append, encoding) => ipcRenderer.invoke('tcpServer:broadcast', { id, data, mode, append, encoding }),
+    onData: (cb) => ipcRenderer.on('tcpServer:data', (_e, p) => cb({ serverId: p.serverId, clientId: p.clientId, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
+    onEvent: (cb) => ipcRenderer.on('tcpServer:event', (_e, p) => cb(p)),
+  },
   tcpShare: {
     start: (id, port) => ipcRenderer.invoke('tcpShare:start', { id, port }),
     stop:  (id)       => ipcRenderer.invoke('tcpShare:stop',  { id }),

@@ -5295,6 +5295,202 @@ function compileBlocksToJS(blocks) {
     return code;
 }
 
+// ========== Drawflow 流程图编辑器初始化 ==========
+
+let flowEditorReady = false;
+
+function initFlowEditorOnDemand() {
+  if (flowEditorReady) return;
+
+  const flowCanvas = document.getElementById('flowCanvas');
+  if (!flowCanvas) {
+    console.warn('flowCanvas not found');
+    return;
+  }
+
+  // 等待容器尺寸确定后再初始化
+  requestAnimationFrame(() => {
+    const rect = flowCanvas.getBoundingClientRect();
+    console.log('flowCanvas rect:', rect.width, rect.height);
+
+    if (rect.width === 0 || rect.height === 0) {
+      console.warn('flowCanvas has zero size, retrying...');
+      setTimeout(initFlowEditorOnDemand, 100);
+      return;
+    }
+
+    // 初始化 FlowEditor
+    try {
+      if (initFlowEditor('flowCanvas')) {
+        flowEditorReady = true;
+
+        // 居中画布
+        const editor = getFlowEditor();
+        if (editor) {
+          editor.centerCanvas();
+        }
+
+        // 设置节点创建/删除回调，更新按钮状态
+        editor.editor.on('nodeCreated', () => {
+          if (typeof updateEditorState === 'function') {
+            updateEditorState('NodeCreated');
+          }
+        });
+        editor.editor.on('nodeRemoved', () => {
+          if (typeof updateEditorState === 'function') {
+            updateEditorState('NodeRemoved');
+          }
+        });
+
+        setupFlowDragDrop();
+        setupFlowToolbar();
+        setupInfiniteCanvas();
+        console.log('FlowEditor initialized on demand');
+
+        // 初始化后立即更新按钮状态
+        if (typeof updateEditorState === 'function') {
+          updateEditorState('FlowEditorReady');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to initialize FlowEditor:', e);
+    }
+  });
+}
+
+function setupInfiniteCanvas() {
+  // 使用静态网格背景，简单可靠
+  // Drawflow 会自动处理画布移动和缩放
+}
+
+function setupFlowToolbar() {
+  const flowEditor = getFlowEditor();
+  if (!flowEditor || !flowEditor.editor) return;
+
+  const df = flowEditor.editor; // Drawflow instance
+  const flowCanvas = document.getElementById('flowCanvas');
+  const zoomOutBtn = document.getElementById('flowZoomOut');
+  const zoomInBtn = document.getElementById('flowZoomIn');
+  const zoomResetBtn = document.getElementById('flowZoomReset');
+  const zoomLevel = document.getElementById('flowZoomLevel');
+  const maxBtn = document.getElementById('flowMaximize');
+
+  const updateZoomDisplay = () => {
+    if (zoomLevel) {
+      // Drawflow 的 zoom 是实际缩放比例（如 1.0, 1.1, 0.9）
+      zoomLevel.textContent = Math.round(df.zoom * 100) + '%';
+    }
+  };
+
+  // 设置滚轮缩放回调
+  flowEditor.onZoomChange = (zoom) => {
+    if (zoomLevel) {
+      zoomLevel.textContent = Math.round(zoom * 100) + '%';
+    }
+  };
+
+  // 缩小
+  if (zoomOutBtn) {
+    zoomOutBtn.onclick = () => {
+      df.zoom_out();
+      updateZoomDisplay();
+    };
+  }
+
+  // 放大
+  if (zoomInBtn) {
+    zoomInBtn.onclick = () => {
+      df.zoom_in();
+      updateZoomDisplay();
+    };
+  }
+
+  // 重置
+  if (zoomResetBtn) {
+    zoomResetBtn.onclick = () => {
+      df.zoom_reset();
+      updateZoomDisplay();
+    };
+  }
+
+  updateZoomDisplay();
+
+  // 最大化/还原对话框
+  if (maxBtn) {
+    let isMaximized = false;
+    const dlgScript = document.getElementById('dlgScript');
+
+    maxBtn.onclick = () => {
+      isMaximized = !isMaximized;
+      if (isMaximized) {
+        dlgScript.classList.add('dlg-maximized');
+        maxBtn.textContent = '❐';
+        maxBtn.title = '还原';
+      } else {
+        dlgScript.classList.remove('dlg-maximized');
+        maxBtn.textContent = '⬜';
+        maxBtn.title = '最大化';
+      }
+    };
+  }
+}
+
+function setupFlowDragDrop() {
+  const sidebar = document.getElementById('flowSidebar');
+  const flowCanvas = document.getElementById('flowCanvas');
+
+  if (!sidebar || !flowCanvas) {
+    console.warn('setupFlowDragDrop: sidebar or flowCanvas not found');
+    return;
+  }
+
+  // 组件库拖拽事件
+  sidebar.querySelectorAll('.flow-template').forEach(template => {
+    template.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('nodeType', template.dataset.node);
+      e.dataTransfer.effectAllowed = 'copy';
+      template.classList.add('dragging');
+      console.log('dragstart:', template.dataset.node);
+    });
+
+    template.addEventListener('dragend', (e) => {
+      template.classList.remove('dragging');
+    });
+  });
+
+  // 直接绑定到 flowCanvas 容器（Drawflow 的 parent-drawflow）
+  // 这样更可靠，坐标转换由 FlowEditor 处理
+  console.log('Attaching drag events to: flowCanvas (parent-drawflow)');
+
+  // 画布接收拖拽
+  flowCanvas.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  flowCanvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nodeType = e.dataTransfer.getData('nodeType');
+    console.log('drop event:', nodeType, 'at', e.clientX, e.clientY);
+    if (nodeType) {
+      const editor = getFlowEditor();
+      if (editor) {
+        try {
+          editor.addNodeFromTemplate(nodeType, e.clientX, e.clientY);
+        } catch (err) {
+          console.error('Failed to add node:', err);
+        }
+      } else {
+        console.warn('FlowEditor not ready');
+      }
+    }
+  });
+}
+
+// FlowEditor 初始化将在 openScript.onclick 中调用
+
 let vsDragSrc = null;
 function initDragZone(z) { if (z._d) return; z._d = 1; z.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); z.classList.add('drag-over'); const a = getDragAfterElement(z, e.clientY), d = document.querySelector('.vs-dragging'); if (d) a ? z.insertBefore(d, a) : z.appendChild(d) }); z.addEventListener('dragleave', () => z.classList.remove('drag-over')); z.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); z.classList.remove('drag-over'); if (vsDragSrc && vsDragSrc.classList.contains('vs-block-template')) { const t = vsDragSrc.dataset.type, n = createBlockElement(t), a = getDragAfterElement(z, e.clientY); if (n) { a ? z.insertBefore(n, a) : z.appendChild(n); checkPlaceholder(); } } }); }
 function initBlockDrag(e) { const h = e.querySelector('.vs-block-header'); h.addEventListener('dragstart', ev => { vsDragSrc = e; e.classList.add('vs-dragging'); ev.dataTransfer.effectAllowed = 'move'; ev.stopPropagation(); }); h.addEventListener('dragend', () => { e.classList.remove('vs-dragging'); vsDragSrc = null; }); }
@@ -5379,6 +5575,38 @@ async function refreshScriptList() {
     const dlgScript = document.getElementById('dlgScript');
     const currentPanelLabel = document.getElementById('currentPanelLabel');
 
+    // 输出面板元素
+    const scriptOutputBody = document.getElementById('scriptOutputBody');
+    const btnOutputClear = document.getElementById('btnOutputClear');
+
+    // 输出日志到 UI 面板
+    function appendScriptOutput(text, type = 'normal') {
+        if (!scriptOutputBody) return;
+
+        // 移除占位符
+        const placeholder = scriptOutputBody.querySelector('.output-placeholder');
+        if (placeholder) placeholder.remove();
+
+        const line = document.createElement('div');
+        line.className = 'output-line' + (type !== 'normal' ? ' ' + type : '');
+        line.textContent = text;
+        scriptOutputBody.appendChild(line);
+
+        // 自动滚动到底部
+        scriptOutputBody.scrollTop = scriptOutputBody.scrollHeight;
+    }
+
+    // 清空输出面板
+    function clearScriptOutput() {
+        if (!scriptOutputBody) return;
+        scriptOutputBody.innerHTML = '<div class="output-placeholder">运行脚本后显示输出...</div>';
+    }
+
+    // 清空按钮事件
+    if (btnOutputClear) {
+        btnOutputClear.onclick = clearScriptOutput;
+    }
+
     async function refreshScriptList() {
         const el = document.getElementById('scriptList');
         if (!el) return;
@@ -5423,6 +5651,22 @@ async function refreshScriptList() {
             currentScriptName.style.fontWeight = "";
         }
 
+        const editor = getFlowEditor();
+        if (editor) {
+            // 尝试解析 Drawflow JSON (新格式)
+            const flowJson = editor.parseScriptFile(content);
+            if (flowJson) {
+                editor.clear();
+                editor.importJSON(flowJson);
+                setTimeout(() => {
+                    scriptSnapshot = getCurrentBlockState();
+                }, 10);
+                updateEditorState('ScriptSelected');
+                return;
+            }
+        }
+
+        // 尝试解析旧格式 (VS_BLOCKS)
         const m = content.match(/\/\* VS_BLOCKS_START\n([\s\S]*?)\nVS_BLOCKS_END \*\//);
         vsCanvas.innerHTML = '';
         if (m && m[1]) {
@@ -5488,6 +5732,20 @@ async function refreshScriptList() {
         const panelId = state ? state.activeId : null;
         const hasScript = !!currentScript;
 
+        // 检查 Drawflow 是否有节点（用于启用运行按钮）
+        const flowEditor = getFlowEditor();
+        let hasDrawflowNodes = false;
+        if (flowEditor && flowEditor.editor) {
+            try {
+                const exported = flowEditor.editor.export();
+                hasDrawflowNodes = exported && exported.drawflow &&
+                    exported.drawflow.Home &&
+                    Object.keys(exported.drawflow.Home.data).length > 0;
+            } catch (e) {
+                console.warn('Failed to check Drawflow nodes:', e);
+            }
+        }
+
         let displayName = "未选择面板";
         let isPanelSelected = false;
         if (panelId && state.panes.has(panelId)) {
@@ -5506,13 +5764,25 @@ async function refreshScriptList() {
             vsCanvas.classList.remove('vs-disabled');
         }
 
-        if (btnScriptSave) btnScriptSave.disabled = !hasScript;
+        // 保存按钮：有脚本或有 Drawflow 节点时启用
+        if (btnScriptSave) btnScriptSave.disabled = !(hasScript || hasDrawflowNodes);
         if (btnScriptDelete) btnScriptDelete.disabled = !hasScript;
 
         const activeRunId = runningScripts[panelId];
 
+        // 运行按钮：有脚本 或 有 Drawflow 节点时启用
+        const canRun = hasScript || hasDrawflowNodes;
+
         if (!isPanelSelected) {
-            if (btnScriptRun) btnScriptRun.disabled = true;
+            // 没有选择面板时，如果有 Drawflow 节点仍可运行（测试模式）
+            if (hasDrawflowNodes) {
+                if (btnScriptRun) {
+                    btnScriptRun.disabled = false;
+                    btnScriptRun.removeAttribute('disabled');
+                }
+            } else {
+                if (btnScriptRun) btnScriptRun.disabled = true;
+            }
             if (btnScriptStop) btnScriptStop.disabled = true;
         } else if (activeRunId) {
             if (btnScriptRun) btnScriptRun.disabled = true;
@@ -5524,8 +5794,8 @@ async function refreshScriptList() {
             }
         } else {
             if (btnScriptRun) {
-                btnScriptRun.disabled = !hasScript;
-                if (hasScript) btnScriptRun.removeAttribute('disabled');
+                btnScriptRun.disabled = !canRun;
+                if (canRun) btnScriptRun.removeAttribute('disabled');
             }
             if (btnScriptStop) {
                 btnScriptStop.disabled = true;
@@ -5539,6 +5809,8 @@ async function refreshScriptList() {
     if (openBtn) {
         openBtn.onclick = () => {
             dlgScript.showModal();
+            // 初始化 Drawflow 流程图编辑器
+            initFlowEditorOnDemand();
             refreshScriptList();
             if (!currentScript) {
                 currentScriptName.textContent = '（未选中）';
@@ -5627,6 +5899,47 @@ async function refreshScriptList() {
     };
 
     if (btnScriptSave) btnScriptSave.onclick = async () => {
+        const editor = getFlowEditor();
+        if (editor) {
+            // 使用 Drawflow 代码生成器
+            const scriptContent = editor.generateScriptFile();
+
+            if (!currentScript) {
+                // 新建脚本
+                const name = prompt('请输入脚本名称:');
+                if (!name) return;
+                currentScript = name.trim() + '.js';
+            }
+
+            btnScriptSave.classList.add('btn-loading');
+            try {
+                const res = await window.api.scripts.write(currentScript, scriptContent);
+                if (res.ok) {
+                    scriptSnapshot = getCurrentBlockState();
+                    updateEditorState('Saved');
+                    const originalText = currentScript;
+
+                    currentScriptName.textContent = "保存成功！";
+                    currentScriptName.style.color = "#67C23A";
+                    currentScriptName.style.fontWeight = "bold";
+
+                    setTimeout(() => {
+                        if (currentScriptName.textContent === "保存成功！") {
+                            currentScriptName.textContent = originalText;
+                            currentScriptName.style.color = "";
+                            currentScriptName.style.fontWeight = "";
+                        }
+                    }, 2000);
+                } else {
+                    uiAlert('保存失败: ' + (res.error || '未知错误'));
+                }
+            } finally {
+                btnScriptSave.classList.remove('btn-loading');
+            }
+            return;
+        }
+
+        // 回退：使用旧的 block 系统
         if (!currentScript) return;
         const data = serializeBlocks(vsCanvas);
         const js = compileBlocksToJS(data);
@@ -5675,25 +5988,76 @@ async function refreshScriptList() {
     };
 
     if (btnScriptRun) btnScriptRun.onclick = async () => {
-        const panelId = state ? state.activeId : null;
-        if (!panelId) return uiAlert('请先在主界面选择一个面板！');
+        console.log('btnScriptRun clicked');
+        // 清空输出面板并显示开始状态
+        clearScriptOutput();
+        appendScriptOutput('[开始运行...]', 'info');
 
-        const blocksData = serializeBlocks(vsCanvas);
-        const jsCode = compileBlocksToJS(blocksData);
+        try {
+            const editor = getFlowEditor();
+            console.log('getFlowEditor result:', editor);
+            if (editor) {
+                // 使用 Drawflow 代码生成器
+                const panelId = state ? state.activeId : null;
+                console.log('panelId:', panelId);
 
-        if (currentScript) {
-            const fileContent = `/* VS_BLOCKS_START\n${JSON.stringify(blocksData)}\nVS_BLOCKS_END */\n\n${jsCode}`;
-            window.api.scripts.write(currentScript, fileContent);
-        }
-        btnScriptRun.disabled = true;
-        const res = await window.api.scripts.run(jsCode, { id: panelId });
-        if (res.ok) {
-            runningScripts[panelId] = res.runId;
-            updateEditorState('RunStarted');
-            refreshScriptList();
-        } else {
-            uiAlert('启动失败: ' + res.error);
-            updateEditorState('RunFailed');
+                // 获取生成的代码
+                const code = editor.exportCode();
+                console.log('Generated code:', code);
+
+                if (!code || code === '// 空流程图' || code === '// 无效数据') {
+                    alert('流程图为空，请先添加节点');
+                    return;
+                }
+
+                // 如果没有面板，使用默认上下文运行（仅用于测试）
+                const ctx = panelId ? { id: panelId } : { id: 'test' };
+
+                btnScriptRun.disabled = true;
+                if (btnScriptStop) btnScriptStop.disabled = false;
+
+                console.log('Calling scripts.run...');
+                const res = await window.api.scripts.run(code, ctx);
+                console.log('scripts.run result:', res);
+                if (res.ok) {
+                    if (panelId) runningScripts[panelId] = res.runId;
+                    updateEditorState('RunStarted');
+                    refreshScriptList();
+                } else {
+                    uiAlert('启动失败: ' + res.error);
+                    updateEditorState('RunFailed');
+                    btnScriptRun.disabled = false;
+                    if (btnScriptStop) btnScriptStop.disabled = true;
+                }
+                return;
+            } else {
+                // 回退：使用旧的 block 系统
+                const panelId = state ? state.activeId : null;
+                if (!panelId) return uiAlert('请先在主界面选择一个面板！');
+
+                const blocksData = serializeBlocks(vsCanvas);
+                const jsCode = compileBlocksToJS(blocksData);
+
+                if (currentScript) {
+                    const fileContent = `/* VS_BLOCKS_START\n${JSON.stringify(blocksData)}\nVS_BLOCKS_END */\n\n${jsCode}`;
+                    window.api.scripts.write(currentScript, fileContent);
+                }
+                btnScriptRun.disabled = true;
+                const res = await window.api.scripts.run(jsCode, { id: panelId });
+                if (res.ok) {
+                    runningScripts[panelId] = res.runId;
+                    updateEditorState('RunStarted');
+                    refreshScriptList();
+                } else {
+                    uiAlert('启动失败: ' + res.error);
+                    updateEditorState('RunFailed');
+                }
+            }
+        } catch (e) {
+            console.error('btnScriptRun error:', e);
+            uiAlert('运行错误: ' + e.message);
+            btnScriptRun.disabled = false;
+            if (btnScriptStop) btnScriptStop.disabled = true;
         }
     };
 
@@ -5709,6 +6073,18 @@ async function refreshScriptList() {
 
     if (window.api.scripts && window.api.scripts.onEnded) {
         window.api.scripts.onEnded((res) => {
+            // 显示脚本输出日志到 UI
+            if (res.logs && res.logs.length > 0) {
+                res.logs.forEach(log => appendScriptOutput(log));
+                console.log('[脚本输出]', res.logs.join('\n'));
+            }
+            if (!res.ok) {
+                appendScriptOutput('[错误] ' + res.error, 'error');
+                console.error('[脚本错误]', res.error);
+            } else {
+                appendScriptOutput('[完成]', 'success');
+            }
+
             let targetPanelId = null;
             for (const [pId, rId] of Object.entries(runningScripts)) {
                 if (rId === res.runId) { targetPanelId = pId; break; }
@@ -5719,6 +6095,10 @@ async function refreshScriptList() {
                     updateEditorState('ScriptEnded');
                 }
             }
+
+            // 重新启用运行按钮
+            if (btnScriptRun) btnScriptRun.disabled = false;
+            if (btnScriptStop) btnScriptStop.disabled = true;
         });
     }
 
