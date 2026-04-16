@@ -173,7 +173,7 @@ function showLimitDialog(currentVal, isEnabled) {
         dlg.innerHTML = `
             <div class="box">
                 <div class="title">设置数据保留条数</div>
-                <div class="msg">请输入要保留的最新数据行数：<br><span style="font-size:12px;color:#909399">(该设置优先级高于实时保存数据时的默认限制)</span></div>
+                <div class="msg">请输入要保留的最新数据行数：<br><span style="font-size:12px;color:#909399">(录制日志时，此设置优先级高于默认的100条限制)</span></div>
                 <input class="prompt-input" type="number" value="${currentVal}" min="10" step="100">
                 <div class="actions">
                     ${isEnabled ? '<button class="danger btn-off" style="margin-right:auto">关闭限制</button>' : ''}
@@ -1273,7 +1273,37 @@ const state = {
     cmdIntervalMap: new Map(),
     cmdGroupsMeta: loadCmdGroupsMeta(),
     paneOrder: [],
+    virtualPairs: new Map(), // pairId => { pairId, portA, portB }
 };
+
+// ========== 虚拟串口对辅助 ==========
+function getVirtualPairIdForPane(paneId) {
+    for (const [pairId, pair] of state.virtualPairs) {
+        if (paneId === `tcp://127.0.0.1:${pair.portA}` || paneId === `tcp://127.0.0.1:${pair.portB}`) {
+            return pairId;
+        }
+    }
+    return null;
+}
+
+async function destroyVirtualPairAndPeer(currentPaneId) {
+    const pairId = getVirtualPairIdForPane(currentPaneId);
+    if (!pairId) return;
+    const pair = state.virtualPairs.get(pairId);
+    if (!pair) return;
+    const idA = `tcp://127.0.0.1:${pair.portA}`;
+    const idB = `tcp://127.0.0.1:${pair.portB}`;
+    const peerId = currentPaneId === idA ? idB : idA;
+    // 同时删除对端面板
+    if (peerId !== currentPaneId && state.panes.has(peerId)) {
+        const peerPane = state.panes.get(peerId);
+        if (peerPane) peerPane.el.remove();
+        state.panes.delete(peerId);
+        if (state.activeId === peerId) setActive(null);
+    }
+    state.virtualPairs.delete(pairId);
+    try { await window.api.virtualPort.destroy(pairId); } catch { }
+}
 
 function promotePaneToFront(id) {
     const arr = state.paneOrder;
@@ -1393,98 +1423,6 @@ if (btnCheckUpdate) {
     });
 }
 
-// ========== 自动更新进度弹窗 ==========
-let updateDialog = null;
-let updateProgressFill = null;
-let updateProgressText = null;
-let updateCancelButton = null;
-
-function createUpdateDialog() {
-    if (updateDialog) return updateDialog;
-
-    const dlg = document.createElement('dialog');
-    dlg.className = 'sys-modal update-modal';
-    dlg.innerHTML = `
-        <div class="update-box">
-            <div class="update-title">正在更新</div>
-            <div class="update-body">
-                <div class="update-progress-wrap">
-                    <div class="update-progress-fill" id="updateProgressFill"></div>
-                </div>
-                <div class="update-progress-text" id="updateProgressText">准备中...</div>
-            </div>
-            <div class="update-footer" id="updateFooter">
-                <button class="update-cancel-btn" id="updateCancelBtn">取消下载</button>
-            </div>
-        </div>
-    `;
-    document.body.appendChild(dlg);
-
-    updateProgressFill = dlg.querySelector('#updateProgressFill');
-    updateProgressText = dlg.querySelector('#updateProgressText');
-    updateCancelButton = dlg.querySelector('#updateCancelBtn');
-    const updateFooter = dlg.querySelector('#updateFooter');
-
-    updateCancelButton.addEventListener('click', () => {
-        window.api.app.cancelUpdate();
-        closeUpdateDialog();
-        uiAlert('更新已取消');
-    });
-
-    updateDialog = dlg;
-    return dlg;
-}
-
-function showUpdateDialog() {
-    const dlg = createUpdateDialog();
-    // 重置状态
-    updateProgressFill.style.width = '0%';
-    updateProgressFill.classList.remove('indeterminate');
-    updateProgressText.textContent = '准备中...';
-    updateCancelButton.style.display = '';
-    dlg.querySelector('#updateFooter').style.display = '';
-    dlg.showModal();
-}
-
-function closeUpdateDialog() {
-    if (updateDialog) {
-        try { updateDialog.close(); } catch { }
-    }
-}
-
-function updateProgressUI(data) {
-    if (!updateDialog || !updateDialog.open) return;
-
-    if (data.state === 'downloading') {
-        const pct = Math.max(0, Math.min(100, data.percent));
-        updateProgressFill.style.width = pct + '%';
-        updateProgressFill.classList.remove('indeterminate');
-        updateProgressText.textContent = pct + '%';
-    } else if (data.state === 'installing') {
-        updateProgressFill.classList.add('indeterminate');
-        updateProgressFill.style.width = '100%';
-        updateProgressText.textContent = '正在安装...';
-        updateCancelButton.style.display = 'none';
-    }
-}
-
-// 监听主进程的更新进度
-if (window.api.app.onUpdateProgress) {
-    window.api.app.onUpdateProgress((data) => {
-        if (!updateDialog || !updateDialog.open) {
-            showUpdateDialog();
-        }
-        updateProgressUI(data);
-    });
-}
-
-if (window.api.app.onUpdateError) {
-    window.api.app.onUpdateError((data) => {
-        closeUpdateDialog();
-        uiAlert('更新失败: ' + (data.message || '未知错误'));
-    });
-}
-
 if (btnChangelog) {
     btnChangelog.addEventListener('click', async () => {
         btnChangelog.classList.remove('shining-btn');
@@ -1561,9 +1499,9 @@ function updateLogBtnUI(pane) {
     btnRealtimeLog.disabled = false;
     
     if (pane.logging && pane.logging.active) {
-        btnRealtimeLog.innerHTML = '<span class="icon-spin">●</span> 停止写入';
+        btnRealtimeLog.innerHTML = '<span class="icon-spin">●</span> 停止录制';
         btnRealtimeLog.classList.add('danger');
-        btnRealtimeLog.title = `正在写入到: ${pane.logging.path}`;
+        btnRealtimeLog.title = `正在录制到: ${pane.logging.path}`;
     } else {
         btnRealtimeLog.textContent = '实时保存数据';
         btnRealtimeLog.classList.remove('danger');
@@ -1577,7 +1515,7 @@ async function toggleLogging(pane) {
     if (pane.logging && pane.logging.active) {
         pane.logging.active = false;
         pane.logging.path = null;
-        appendSysLine(pane, '[系统] 已停止实时保存数据');
+        appendSysLine(pane, '[系统] 已停止实时数据录制');
         
         const badge = pane.el.querySelector('.log-badge');
         if (badge) badge.remove();
@@ -1592,7 +1530,7 @@ async function toggleLogging(pane) {
     if (res.canceled || !res.filePath) return;
 
     pane.logging = { active: true, path: res.filePath };
-    appendSysLine(pane, `[系统] 开始写入到: ${res.filePath}\n[系统] 实时保存期间界面仅保留最新100条数据。`);
+    appendSysLine(pane, `[系统] 开始录制到: ${res.filePath}\n[系统] 录制期间界面仅保留最新100条数据。`);
 
     const titleBtns = pane.el.querySelector('.title .btns');
     if (titleBtns && !pane.el.querySelector('.log-badge')) {
@@ -2684,6 +2622,7 @@ function refreshPanelList() {
             }
             pane.el.remove();
             state.panes.delete(id);
+            await destroyVirtualPairAndPeer(id);
             window.api.config.save(exportPanelsConfig());
             if (state.activeId === id) setActive(null);
             refreshPanelList();
@@ -3154,6 +3093,33 @@ async function refreshPortsCombo() {
     fillPortSelect(state.activeId);
 }
 btnRefreshPorts.addEventListener('click', refreshPortsCombo);
+
+// ========== 新建虚拟串口对 ==========
+const btnNewVPort = document.getElementById('btnNewVPort');
+btnNewVPort.addEventListener('click', async () => {
+    const r = await window.api.virtualPort.create();
+    if (!r || !r.ok) {
+        alert('创建虚拟串口对失败: ' + (r && r.error ? r.error : '未知错误'));
+        return;
+    }
+    state.virtualPairs.set(r.pairId, { pairId: r.pairId, portA: r.portA, portB: r.portB });
+    const num = parseInt(r.pairId.replace('vp-', ''), 10);
+    const idA = `tcp://127.0.0.1:${r.portA}`;
+    const idB = `tcp://127.0.0.1:${r.portB}`;
+    const nameA = `虚拟 ${num}-A`;
+    const nameB = `虚拟 ${num}-B`;
+    createPane(idA, nameA);
+    createPane(idB, nameB);
+    // 自动连接两个面板
+    for (const pid of [idA, idB]) {
+        const pane = state.panes.get(pid);
+        if (pane) {
+            const btn = pane.el.querySelector('.btnToggle');
+            if (btn) btn.click();
+        }
+    }
+    window.api.config.save(exportPanelsConfig());
+});
 
 inputData.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -4175,6 +4141,14 @@ window.addEventListener('message', (event) => {
     state.savedConfig = Array.isArray(saved) ? saved : [];
     state.listOrder = state.savedConfig.map(p => p.id || p.path);
 
+    // 恢复虚拟串口对
+    try {
+        const restoredPairs = await window.api.virtualPort.restore();
+        for (const p of restoredPairs) {
+            state.virtualPairs.set(p.pairId, { pairId: p.pairId, portA: p.portA, portB: p.portB });
+        }
+    } catch { }
+
     state.savedConfig.forEach(p => {
         const id = p.id || p.path;
         const name = p.name || id || '';
@@ -4757,6 +4731,11 @@ window.addEventListener('message', (event) => {
                         if (btn) btn.click();
                     });
 
+                    addItem('🔗 新建虚拟串口对', () => {
+                        const btn = document.getElementById('btnNewVPort');
+                        if (btn) btn.click();
+                    });
+
                     addItem('🌐 新建浏览器页面', async () => {
                         const url = await uiPrompt('请输入网址 (例如 baidu.com)', { title: '新建浏览器', defaultValue: 'https://satone1008.cn/index.php/2025/09/16/%e6%94%af%e6%8c%81%e5%a4%9a%e7%aa%97%e5%8f%a3%e7%9b%91%e8%a7%86%e7%9a%84%e4%b8%b2%e5%8f%a3%e5%8a%a9%e6%89%8bsaecom/' });
                         if (url) createBrowserPane(url);
@@ -4871,6 +4850,7 @@ window.addEventListener('message', (event) => {
                 }
                 pane.el.remove();
                 state.panes.delete(currentPaneId);
+                await destroyVirtualPairAndPeer(currentPaneId);
                 window.api.config.save(exportPanelsConfig());
                 if (state.activeId === currentPaneId) setActive(null);
                 refreshPanelList();
@@ -4911,14 +4891,13 @@ function parseChangelogMarkdown(md) {
         .replace(/^## (.*$)/gim, '<h2>$1</h2>')
         .replace(/^### (.*$)/gim, '<h3>$1</h3>');
 
-    html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED|FEAT|BUG|HOTFIX|REFACTOR|PERF|STYLE|DOCS|TEST|CI|BUILD|CHORE|DEPS|SECURITY|REVERT|BREAKING|IMPROVE|TWEAK|INIT|MIGRATE).*?\*\*/gim, (match, p1) => {
+    html = html.replace(/^\*\*(FIX|UPDATE|NEW|OPTIMIZE|REMOVED).*?\*\*/gim, (match, p1) => {
         return `<div class="tag-line">${p1}</div>`;
     });
 
     html = html
         .replace(/\*\*(.*?)\*\*/gim, '<b>$1</b>')
         .replace(/`(.*?)`/gim, '<code>$1</code>')
-        .replace(/\[([^\]]+)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener">$1</a>')
         .replace(/^\> (.*$)/gim, '<blockquote>$1</blockquote>');
 
     html = html.replace(/^\s*-\s+(.*)$/gim, '<li>$1</li>');
@@ -5316,6 +5295,202 @@ function compileBlocksToJS(blocks) {
     return code;
 }
 
+// ========== Drawflow 流程图编辑器初始化 ==========
+
+let flowEditorReady = false;
+
+function initFlowEditorOnDemand() {
+  if (flowEditorReady) return;
+
+  const flowCanvas = document.getElementById('flowCanvas');
+  if (!flowCanvas) {
+    console.warn('flowCanvas not found');
+    return;
+  }
+
+  // 等待容器尺寸确定后再初始化
+  requestAnimationFrame(() => {
+    const rect = flowCanvas.getBoundingClientRect();
+    console.log('flowCanvas rect:', rect.width, rect.height);
+
+    if (rect.width === 0 || rect.height === 0) {
+      console.warn('flowCanvas has zero size, retrying...');
+      setTimeout(initFlowEditorOnDemand, 100);
+      return;
+    }
+
+    // 初始化 FlowEditor
+    try {
+      if (initFlowEditor('flowCanvas')) {
+        flowEditorReady = true;
+
+        // 居中画布
+        const editor = getFlowEditor();
+        if (editor) {
+          editor.centerCanvas();
+        }
+
+        // 设置节点创建/删除回调，更新按钮状态
+        editor.editor.on('nodeCreated', () => {
+          if (typeof updateEditorState === 'function') {
+            updateEditorState('NodeCreated');
+          }
+        });
+        editor.editor.on('nodeRemoved', () => {
+          if (typeof updateEditorState === 'function') {
+            updateEditorState('NodeRemoved');
+          }
+        });
+
+        setupFlowDragDrop();
+        setupFlowToolbar();
+        setupInfiniteCanvas();
+        console.log('FlowEditor initialized on demand');
+
+        // 初始化后立即更新按钮状态
+        if (typeof updateEditorState === 'function') {
+          updateEditorState('FlowEditorReady');
+        }
+      }
+    } catch (e) {
+      console.error('Failed to initialize FlowEditor:', e);
+    }
+  });
+}
+
+function setupInfiniteCanvas() {
+  // 使用静态网格背景，简单可靠
+  // Drawflow 会自动处理画布移动和缩放
+}
+
+function setupFlowToolbar() {
+  const flowEditor = getFlowEditor();
+  if (!flowEditor || !flowEditor.editor) return;
+
+  const df = flowEditor.editor; // Drawflow instance
+  const flowCanvas = document.getElementById('flowCanvas');
+  const zoomOutBtn = document.getElementById('flowZoomOut');
+  const zoomInBtn = document.getElementById('flowZoomIn');
+  const zoomResetBtn = document.getElementById('flowZoomReset');
+  const zoomLevel = document.getElementById('flowZoomLevel');
+  const maxBtn = document.getElementById('flowMaximize');
+
+  const updateZoomDisplay = () => {
+    if (zoomLevel) {
+      // Drawflow 的 zoom 是实际缩放比例（如 1.0, 1.1, 0.9）
+      zoomLevel.textContent = Math.round(df.zoom * 100) + '%';
+    }
+  };
+
+  // 设置滚轮缩放回调
+  flowEditor.onZoomChange = (zoom) => {
+    if (zoomLevel) {
+      zoomLevel.textContent = Math.round(zoom * 100) + '%';
+    }
+  };
+
+  // 缩小
+  if (zoomOutBtn) {
+    zoomOutBtn.onclick = () => {
+      df.zoom_out();
+      updateZoomDisplay();
+    };
+  }
+
+  // 放大
+  if (zoomInBtn) {
+    zoomInBtn.onclick = () => {
+      df.zoom_in();
+      updateZoomDisplay();
+    };
+  }
+
+  // 重置
+  if (zoomResetBtn) {
+    zoomResetBtn.onclick = () => {
+      df.zoom_reset();
+      updateZoomDisplay();
+    };
+  }
+
+  updateZoomDisplay();
+
+  // 最大化/还原对话框
+  if (maxBtn) {
+    let isMaximized = false;
+    const dlgScript = document.getElementById('dlgScript');
+
+    maxBtn.onclick = () => {
+      isMaximized = !isMaximized;
+      if (isMaximized) {
+        dlgScript.classList.add('dlg-maximized');
+        maxBtn.textContent = '❐';
+        maxBtn.title = '还原';
+      } else {
+        dlgScript.classList.remove('dlg-maximized');
+        maxBtn.textContent = '⬜';
+        maxBtn.title = '最大化';
+      }
+    };
+  }
+}
+
+function setupFlowDragDrop() {
+  const sidebar = document.getElementById('flowSidebar');
+  const flowCanvas = document.getElementById('flowCanvas');
+
+  if (!sidebar || !flowCanvas) {
+    console.warn('setupFlowDragDrop: sidebar or flowCanvas not found');
+    return;
+  }
+
+  // 组件库拖拽事件
+  sidebar.querySelectorAll('.flow-template').forEach(template => {
+    template.addEventListener('dragstart', (e) => {
+      e.dataTransfer.setData('nodeType', template.dataset.node);
+      e.dataTransfer.effectAllowed = 'copy';
+      template.classList.add('dragging');
+      console.log('dragstart:', template.dataset.node);
+    });
+
+    template.addEventListener('dragend', (e) => {
+      template.classList.remove('dragging');
+    });
+  });
+
+  // 直接绑定到 flowCanvas 容器（Drawflow 的 parent-drawflow）
+  // 这样更可靠，坐标转换由 FlowEditor 处理
+  console.log('Attaching drag events to: flowCanvas (parent-drawflow)');
+
+  // 画布接收拖拽
+  flowCanvas.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'copy';
+  });
+
+  flowCanvas.addEventListener('drop', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const nodeType = e.dataTransfer.getData('nodeType');
+    console.log('drop event:', nodeType, 'at', e.clientX, e.clientY);
+    if (nodeType) {
+      const editor = getFlowEditor();
+      if (editor) {
+        try {
+          editor.addNodeFromTemplate(nodeType, e.clientX, e.clientY);
+        } catch (err) {
+          console.error('Failed to add node:', err);
+        }
+      } else {
+        console.warn('FlowEditor not ready');
+      }
+    }
+  });
+}
+
+// FlowEditor 初始化将在 openScript.onclick 中调用
+
 let vsDragSrc = null;
 function initDragZone(z) { if (z._d) return; z._d = 1; z.addEventListener('dragover', e => { e.preventDefault(); e.stopPropagation(); z.classList.add('drag-over'); const a = getDragAfterElement(z, e.clientY), d = document.querySelector('.vs-dragging'); if (d) a ? z.insertBefore(d, a) : z.appendChild(d) }); z.addEventListener('dragleave', () => z.classList.remove('drag-over')); z.addEventListener('drop', e => { e.preventDefault(); e.stopPropagation(); z.classList.remove('drag-over'); if (vsDragSrc && vsDragSrc.classList.contains('vs-block-template')) { const t = vsDragSrc.dataset.type, n = createBlockElement(t), a = getDragAfterElement(z, e.clientY); if (n) { a ? z.insertBefore(n, a) : z.appendChild(n); checkPlaceholder(); } } }); }
 function initBlockDrag(e) { const h = e.querySelector('.vs-block-header'); h.addEventListener('dragstart', ev => { vsDragSrc = e; e.classList.add('vs-dragging'); ev.dataTransfer.effectAllowed = 'move'; ev.stopPropagation(); }); h.addEventListener('dragend', () => { e.classList.remove('vs-dragging'); vsDragSrc = null; }); }
@@ -5400,6 +5575,38 @@ async function refreshScriptList() {
     const dlgScript = document.getElementById('dlgScript');
     const currentPanelLabel = document.getElementById('currentPanelLabel');
 
+    // 输出面板元素
+    const scriptOutputBody = document.getElementById('scriptOutputBody');
+    const btnOutputClear = document.getElementById('btnOutputClear');
+
+    // 输出日志到 UI 面板
+    function appendScriptOutput(text, type = 'normal') {
+        if (!scriptOutputBody) return;
+
+        // 移除占位符
+        const placeholder = scriptOutputBody.querySelector('.output-placeholder');
+        if (placeholder) placeholder.remove();
+
+        const line = document.createElement('div');
+        line.className = 'output-line' + (type !== 'normal' ? ' ' + type : '');
+        line.textContent = text;
+        scriptOutputBody.appendChild(line);
+
+        // 自动滚动到底部
+        scriptOutputBody.scrollTop = scriptOutputBody.scrollHeight;
+    }
+
+    // 清空输出面板
+    function clearScriptOutput() {
+        if (!scriptOutputBody) return;
+        scriptOutputBody.innerHTML = '<div class="output-placeholder">运行脚本后显示输出...</div>';
+    }
+
+    // 清空按钮事件
+    if (btnOutputClear) {
+        btnOutputClear.onclick = clearScriptOutput;
+    }
+
     async function refreshScriptList() {
         const el = document.getElementById('scriptList');
         if (!el) return;
@@ -5444,6 +5651,22 @@ async function refreshScriptList() {
             currentScriptName.style.fontWeight = "";
         }
 
+        const editor = getFlowEditor();
+        if (editor) {
+            // 尝试解析 Drawflow JSON (新格式)
+            const flowJson = editor.parseScriptFile(content);
+            if (flowJson) {
+                editor.clear();
+                editor.importJSON(flowJson);
+                setTimeout(() => {
+                    scriptSnapshot = getCurrentBlockState();
+                }, 10);
+                updateEditorState('ScriptSelected');
+                return;
+            }
+        }
+
+        // 尝试解析旧格式 (VS_BLOCKS)
         const m = content.match(/\/\* VS_BLOCKS_START\n([\s\S]*?)\nVS_BLOCKS_END \*\//);
         vsCanvas.innerHTML = '';
         if (m && m[1]) {
@@ -5509,6 +5732,20 @@ async function refreshScriptList() {
         const panelId = state ? state.activeId : null;
         const hasScript = !!currentScript;
 
+        // 检查 Drawflow 是否有节点（用于启用运行按钮）
+        const flowEditor = getFlowEditor();
+        let hasDrawflowNodes = false;
+        if (flowEditor && flowEditor.editor) {
+            try {
+                const exported = flowEditor.editor.export();
+                hasDrawflowNodes = exported && exported.drawflow &&
+                    exported.drawflow.Home &&
+                    Object.keys(exported.drawflow.Home.data).length > 0;
+            } catch (e) {
+                console.warn('Failed to check Drawflow nodes:', e);
+            }
+        }
+
         let displayName = "未选择面板";
         let isPanelSelected = false;
         if (panelId && state.panes.has(panelId)) {
@@ -5527,13 +5764,25 @@ async function refreshScriptList() {
             vsCanvas.classList.remove('vs-disabled');
         }
 
-        if (btnScriptSave) btnScriptSave.disabled = !hasScript;
+        // 保存按钮：有脚本或有 Drawflow 节点时启用
+        if (btnScriptSave) btnScriptSave.disabled = !(hasScript || hasDrawflowNodes);
         if (btnScriptDelete) btnScriptDelete.disabled = !hasScript;
 
         const activeRunId = runningScripts[panelId];
 
+        // 运行按钮：有脚本 或 有 Drawflow 节点时启用
+        const canRun = hasScript || hasDrawflowNodes;
+
         if (!isPanelSelected) {
-            if (btnScriptRun) btnScriptRun.disabled = true;
+            // 没有选择面板时，如果有 Drawflow 节点仍可运行（测试模式）
+            if (hasDrawflowNodes) {
+                if (btnScriptRun) {
+                    btnScriptRun.disabled = false;
+                    btnScriptRun.removeAttribute('disabled');
+                }
+            } else {
+                if (btnScriptRun) btnScriptRun.disabled = true;
+            }
             if (btnScriptStop) btnScriptStop.disabled = true;
         } else if (activeRunId) {
             if (btnScriptRun) btnScriptRun.disabled = true;
@@ -5545,8 +5794,8 @@ async function refreshScriptList() {
             }
         } else {
             if (btnScriptRun) {
-                btnScriptRun.disabled = !hasScript;
-                if (hasScript) btnScriptRun.removeAttribute('disabled');
+                btnScriptRun.disabled = !canRun;
+                if (canRun) btnScriptRun.removeAttribute('disabled');
             }
             if (btnScriptStop) {
                 btnScriptStop.disabled = true;
@@ -5560,6 +5809,8 @@ async function refreshScriptList() {
     if (openBtn) {
         openBtn.onclick = () => {
             dlgScript.showModal();
+            // 初始化 Drawflow 流程图编辑器
+            initFlowEditorOnDemand();
             refreshScriptList();
             if (!currentScript) {
                 currentScriptName.textContent = '（未选中）';
@@ -5648,6 +5899,47 @@ async function refreshScriptList() {
     };
 
     if (btnScriptSave) btnScriptSave.onclick = async () => {
+        const editor = getFlowEditor();
+        if (editor) {
+            // 使用 Drawflow 代码生成器
+            const scriptContent = editor.generateScriptFile();
+
+            if (!currentScript) {
+                // 新建脚本
+                const name = prompt('请输入脚本名称:');
+                if (!name) return;
+                currentScript = name.trim() + '.js';
+            }
+
+            btnScriptSave.classList.add('btn-loading');
+            try {
+                const res = await window.api.scripts.write(currentScript, scriptContent);
+                if (res.ok) {
+                    scriptSnapshot = getCurrentBlockState();
+                    updateEditorState('Saved');
+                    const originalText = currentScript;
+
+                    currentScriptName.textContent = "保存成功！";
+                    currentScriptName.style.color = "#67C23A";
+                    currentScriptName.style.fontWeight = "bold";
+
+                    setTimeout(() => {
+                        if (currentScriptName.textContent === "保存成功！") {
+                            currentScriptName.textContent = originalText;
+                            currentScriptName.style.color = "";
+                            currentScriptName.style.fontWeight = "";
+                        }
+                    }, 2000);
+                } else {
+                    uiAlert('保存失败: ' + (res.error || '未知错误'));
+                }
+            } finally {
+                btnScriptSave.classList.remove('btn-loading');
+            }
+            return;
+        }
+
+        // 回退：使用旧的 block 系统
         if (!currentScript) return;
         const data = serializeBlocks(vsCanvas);
         const js = compileBlocksToJS(data);
@@ -5696,25 +5988,76 @@ async function refreshScriptList() {
     };
 
     if (btnScriptRun) btnScriptRun.onclick = async () => {
-        const panelId = state ? state.activeId : null;
-        if (!panelId) return uiAlert('请先在主界面选择一个面板！');
+        console.log('btnScriptRun clicked');
+        // 清空输出面板并显示开始状态
+        clearScriptOutput();
+        appendScriptOutput('[开始运行...]', 'info');
 
-        const blocksData = serializeBlocks(vsCanvas);
-        const jsCode = compileBlocksToJS(blocksData);
+        try {
+            const editor = getFlowEditor();
+            console.log('getFlowEditor result:', editor);
+            if (editor) {
+                // 使用 Drawflow 代码生成器
+                const panelId = state ? state.activeId : null;
+                console.log('panelId:', panelId);
 
-        if (currentScript) {
-            const fileContent = `/* VS_BLOCKS_START\n${JSON.stringify(blocksData)}\nVS_BLOCKS_END */\n\n${jsCode}`;
-            window.api.scripts.write(currentScript, fileContent);
-        }
-        btnScriptRun.disabled = true;
-        const res = await window.api.scripts.run(jsCode, { id: panelId });
-        if (res.ok) {
-            runningScripts[panelId] = res.runId;
-            updateEditorState('RunStarted');
-            refreshScriptList();
-        } else {
-            uiAlert('启动失败: ' + res.error);
-            updateEditorState('RunFailed');
+                // 获取生成的代码
+                const code = editor.exportCode();
+                console.log('Generated code:', code);
+
+                if (!code || code === '// 空流程图' || code === '// 无效数据') {
+                    alert('流程图为空，请先添加节点');
+                    return;
+                }
+
+                // 如果没有面板，使用默认上下文运行（仅用于测试）
+                const ctx = panelId ? { id: panelId } : { id: 'test' };
+
+                btnScriptRun.disabled = true;
+                if (btnScriptStop) btnScriptStop.disabled = false;
+
+                console.log('Calling scripts.run...');
+                const res = await window.api.scripts.run(code, ctx);
+                console.log('scripts.run result:', res);
+                if (res.ok) {
+                    if (panelId) runningScripts[panelId] = res.runId;
+                    updateEditorState('RunStarted');
+                    refreshScriptList();
+                } else {
+                    uiAlert('启动失败: ' + res.error);
+                    updateEditorState('RunFailed');
+                    btnScriptRun.disabled = false;
+                    if (btnScriptStop) btnScriptStop.disabled = true;
+                }
+                return;
+            } else {
+                // 回退：使用旧的 block 系统
+                const panelId = state ? state.activeId : null;
+                if (!panelId) return uiAlert('请先在主界面选择一个面板！');
+
+                const blocksData = serializeBlocks(vsCanvas);
+                const jsCode = compileBlocksToJS(blocksData);
+
+                if (currentScript) {
+                    const fileContent = `/* VS_BLOCKS_START\n${JSON.stringify(blocksData)}\nVS_BLOCKS_END */\n\n${jsCode}`;
+                    window.api.scripts.write(currentScript, fileContent);
+                }
+                btnScriptRun.disabled = true;
+                const res = await window.api.scripts.run(jsCode, { id: panelId });
+                if (res.ok) {
+                    runningScripts[panelId] = res.runId;
+                    updateEditorState('RunStarted');
+                    refreshScriptList();
+                } else {
+                    uiAlert('启动失败: ' + res.error);
+                    updateEditorState('RunFailed');
+                }
+            }
+        } catch (e) {
+            console.error('btnScriptRun error:', e);
+            uiAlert('运行错误: ' + e.message);
+            btnScriptRun.disabled = false;
+            if (btnScriptStop) btnScriptStop.disabled = true;
         }
     };
 
@@ -5730,6 +6073,18 @@ async function refreshScriptList() {
 
     if (window.api.scripts && window.api.scripts.onEnded) {
         window.api.scripts.onEnded((res) => {
+            // 显示脚本输出日志到 UI
+            if (res.logs && res.logs.length > 0) {
+                res.logs.forEach(log => appendScriptOutput(log));
+                console.log('[脚本输出]', res.logs.join('\n'));
+            }
+            if (!res.ok) {
+                appendScriptOutput('[错误] ' + res.error, 'error');
+                console.error('[脚本错误]', res.error);
+            } else {
+                appendScriptOutput('[完成]', 'success');
+            }
+
             let targetPanelId = null;
             for (const [pId, rId] of Object.entries(runningScripts)) {
                 if (rId === res.runId) { targetPanelId = pId; break; }
@@ -5740,6 +6095,10 @@ async function refreshScriptList() {
                     updateEditorState('ScriptEnded');
                 }
             }
+
+            // 重新启用运行按钮
+            if (btnScriptRun) btnScriptRun.disabled = false;
+            if (btnScriptStop) btnScriptStop.disabled = true;
         });
     }
 

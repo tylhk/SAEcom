@@ -357,8 +357,14 @@ input[type="number"],
   font-size: 18px;
 }
 
+#btnNewVPort::before {
+  content: "🔗";
+  font-size: 18px;
+}
+
 #btnNew::after,
-#btnRefreshPorts::after {
+#btnRefreshPorts::after,
+#btnNewVPort::after {
   display: inline-block;
   white-space: nowrap;
   overflow: hidden;
@@ -378,15 +384,21 @@ input[type="number"],
   content: "刷新串口";
 }
 
+#btnNewVPort::after {
+  content: "虚拟串口对";
+}
+
 #sidebar.open #btnNew::after,
-#sidebar.open #btnRefreshPorts::after {
+#sidebar.open #btnRefreshPorts::after,
+#sidebar.open #btnNewVPort::after {
   max-width: 200px;
   opacity: 1;
   margin-left: 6px;
 }
 
 #sidebar:not(.open) #btnNew::after,
-#sidebar:not(.open) #btnRefreshPorts::after {
+#sidebar:not(.open) #btnRefreshPorts::after,
+#sidebar:not(.open) #btnNewVPort::after {
   transition-delay: 0s, 0s, 0s;
 }
 
@@ -702,7 +714,7 @@ input[type="number"],
 }
 
 #baud {
-  width: 80px;
+  width: 110px;
 }
 
 #row-send-opts {
@@ -1324,6 +1336,13 @@ dialog:not([open]) {
 
   --el-shadow-sm: 0 1px 2px rgba(0, 0, 0, .6);
   --el-shadow-md: 0 8px 24px rgba(0, 0, 0, .55);
+
+  /* Drawflow 专用变量 (GitHub Dark 风格) */
+  --df-node-bg: #21262d;
+  --df-node-border: #30363d;
+  --df-sidebar-bg: #161b22;
+  --df-input-bg: #0d1117;
+  --df-input-text: #c9d1d9;
 }
 
 .theme-dark body {
@@ -2901,10 +2920,22 @@ input[type="number"] {
 #dlgScript.dlg-visual-script {
     width: 1000px;
     height: 700px;
+    max-width: 95vw;
+    max-height: 90vh;
     padding: 0;
     display: flex;
     flex-direction: column;
     overflow: hidden;
+    transition: width 0.2s, height 0.2s;
+}
+
+#dlgScript.dlg-maximized {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: 100vw !important;
+    max-height: 100vh !important;
+    margin: 0;
+    border-radius: 0;
 }
 
 .vs-header {
@@ -2961,9 +2992,8 @@ input[type="number"] {
 
 .vs-canvas-wrapper {
     flex: 1;
-    overflow-y: auto;
-    padding: 0;
     position: relative;
+    min-height: 0;
 }
 
 .vs-canvas {
@@ -3050,6 +3080,78 @@ input[type="number"] {
     border-left: 1px solid var(--el-border-color);
     padding: 10px;
     overflow-y: auto;
+}
+
+/* 脚本输出面板 */
+.script-output-panel {
+    height: 120px;
+    background: var(--el-bg-surface);
+    border-top: 1px solid var(--el-border-color);
+    display: flex;
+    flex-direction: column;
+}
+
+.script-output-header {
+    padding: 6px 12px;
+    background: var(--el-fill-light);
+    border-bottom: 1px solid var(--el-border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.output-title {
+    font-size: var(--fs-12);
+    font-weight: var(--fw-medium);
+    color: var(--el-text-color-secondary);
+}
+
+.output-clear-btn {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.output-clear-btn:hover {
+    opacity: 1;
+}
+
+.script-output-body {
+    flex: 1;
+    padding: 8px 12px;
+    overflow-y: auto;
+    font-size: var(--fs-12);
+    font-family: 'Consolas', 'Monaco', monospace;
+    white-space: pre-wrap;
+    word-break: break-all;
+    color: var(--el-text-color-primary);
+    background: var(--el-fill-lighter);
+}
+
+.output-placeholder {
+    color: var(--el-text-color-placeholder);
+    text-align: center;
+    padding: 20px;
+}
+
+.output-line {
+    margin: 2px 0;
+    line-height: 1.4;
+}
+
+.output-line.error {
+    color: #f56c6c;
+}
+
+.output-line.success {
+    color: #67c23a;
+}
+
+.output-line.info {
+    color: #909399;
 }
 
 .vs-sub-container {
@@ -3442,6 +3544,432 @@ textarea.vs-input {
 
 .theme-dark .v-separator {
     background-color: var(--el-border-dark);
+}
+
+/* ========== Drawflow 流程图编辑器样式 ========== */
+
+/* Drawflow 容器 - 必须有 overflow:hidden 和 touch-action:none */
+#flowCanvas.parent-drawflow {
+  display: flex;
+  overflow: hidden;
+  touch-action: none;
+  outline: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 400px;
+  background: #f0f2f5;
+  background-size: 20px 20px;
+  background-image:
+    linear-gradient(to right, #ddd 1px, transparent 1px),
+    linear-gradient(to bottom, #ddd 1px, transparent 1px);
+}
+
+/* 夜间模式 */
+:root.theme-dark #flowCanvas.parent-drawflow {
+  background: #161b22;
+  background-image:
+    linear-gradient(to right, #30363d 1px, transparent 1px),
+    linear-gradient(to bottom, #30363d 1px, transparent 1px);
+}
+
+/* 节点样式 - 只覆盖颜色等外观，不改变结构 */
+#flowCanvas .drawflow-node {
+  background: var(--el-bg-surface);
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-radius-sm);
+  min-width: 160px;
+}
+
+#flowCanvas .drawflow-node.selected {
+  border: 2px solid var(--el-color-primary);
+}
+
+/* 节点内部 */
+#flowCanvas .df-node-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  font-size: var(--fs-12);
+  font-weight: var(--fw-medium);
+  color: var(--el-text-color-primary);
+}
+
+#flowCanvas .df-node-icon {
+  font-size: 14px;
+}
+
+#flowCanvas .df-node-body {
+  padding: 4px 10px 8px;
+  font-size: var(--fs-11);
+  color: var(--el-text-color-secondary);
+  border-top: 1px solid var(--el-border-color);
+}
+
+/* 输入/输出端口样式 */
+#flowCanvas .drawflow-node .input,
+#flowCanvas .drawflow-node .output {
+  background: var(--el-color-primary);
+  border: 2px solid var(--el-bg-surface);
+}
+
+/* 条件判断节点的两个输出端口区分颜色 */
+#flowCanvas .drawflow-node.control-if .output:nth-child(1) {
+  background: #67C23A;
+}
+
+#flowCanvas .drawflow-node.control-if .output:nth-child(2) {
+  background: #F56C6C;
+}
+
+/* 超时控制节点 */
+#flowCanvas .drawflow-node.control-timeout .output:nth-child(1) {
+  background: #67C23A;
+}
+
+#flowCanvas .drawflow-node.control-timeout .output:nth-child(2) {
+  background: #E6A23C;
+}
+
+/* 连线样式 - 不覆盖 position，Drawflow 内部控制 */
+#flowCanvas .connection .main-path {
+  fill: none;
+  stroke: var(--el-color-primary);
+  stroke-width: 3px;
+}
+
+#flowCanvas .connection .main-path:hover {
+  stroke: var(--el-color-primary-light);
+  stroke-width: 4px;
+}
+
+#flowCanvas .connection .main-path.selected {
+  stroke: #f85149;
+}
+
+/* 连线中继点 */
+#flowCanvas .point {
+  width: 12px;
+  height: 12px;
+  fill: var(--el-color-primary);
+  stroke: var(--el-bg-surface);
+  stroke-width: 2px;
+  cursor: move;
+}
+
+/* 连线样式变体 */
+#flowCanvas.df-line-curve .connection .main-path {
+  /* 贝塞尔曲线（默认） */
+}
+
+#flowCanvas.df-line-straight .connection .main-path {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+#flowCanvas.df-line-orthogonal .connection .main-path {
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+}
+
+/* 删除节点按钮 */
+#flowCanvas .drawflow-delete {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  background: var(--el-color-danger);
+  border-radius: 50%;
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  line-height: 20px;
+  text-align: center;
+  cursor: pointer;
+  z-index: 100;
+  display: block;
+}
+
+#flowCanvas .drawflow-node .drawflow-delete {
+  top: -10px;
+  right: -10px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#flowCanvas .drawflow-node:hover .drawflow-delete,
+#flowCanvas .drawflow-node.selected .drawflow-delete {
+  opacity: 1;
+}
+
+/* 连线选中时的删除按钮 */
+#flowCanvas .connection .drawflow-delete {
+  display: block;
+}
+
+/* ========== 画布工具栏 ========== */
+.flow-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  background: var(--el-fill-lighter);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.flow-toolbar button {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--el-border-color);
+  background: var(--el-bg-surface);
+  border-radius: var(--el-radius-sm);
+  cursor: pointer;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.flow-toolbar button:hover {
+  background: var(--el-fill-light);
+}
+
+.flow-toolbar #flowZoomLevel {
+  min-width: 45px;
+  text-align: center;
+  font-size: var(--fs-12);
+  color: var(--el-text-color-regular);
+}
+
+.flow-toolbar-sep {
+  width: 1px;
+  height: 20px;
+  background: var(--el-border-color);
+  margin: 0 8px;
+}
+
+/* ========== 组件库样式 ========== */
+.flow-sidebar {
+  width: 180px;
+  background: var(--el-bg-surface);
+  border-right: 1px solid var(--el-border-color);
+  overflow-y: auto;
+  padding: 10px;
+}
+
+.flow-category {
+  font-size: var(--fs-11);
+  font-weight: var(--fw-semibold);
+  color: var(--el-text-color-secondary);
+  padding: 8px 0 6px;
+  border-bottom: 1px solid var(--el-border-color);
+  margin-bottom: 6px;
+}
+
+.flow-template {
+  padding: 8px 10px;
+  margin: 4px 0;
+  background: var(--el-fill-lighter);
+  border: 1px dashed var(--el-border-color);
+  border-radius: var(--el-radius-sm);
+  cursor: grab;
+  font-size: var(--fs-12);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.flow-template:hover {
+  background: var(--el-fill-light);
+  border-color: var(--el-color-primary);
+}
+
+.flow-template.dragging {
+  opacity: 0.5;
+  cursor: grabbing;
+}
+
+/* ========== 配置面板样式 ========== */
+.df-config-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99999;
+}
+
+.df-config-panel {
+  background: var(--el-bg-surface);
+  border-radius: var(--el-radius);
+  box-shadow: var(--el-shadow-md);
+  min-width: 300px;
+  max-width: 420px;
+  overflow: visible;
+}
+
+.df-config-header {
+  padding: 12px 16px;
+  font-weight: var(--fw-semibold);
+  color: var(--el-text-color-primary);
+  border-bottom: 1px solid var(--el-border-color);
+}
+
+.df-config-body {
+  padding: 16px;
+}
+
+.df-config-row {
+  margin-bottom: 12px;
+}
+
+.df-config-row label {
+  display: block;
+  font-size: var(--fs-12);
+  color: var(--el-text-color-secondary);
+  margin-bottom: 4px;
+}
+
+.df-config-row input,
+.df-config-row select {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid var(--el-border-color);
+  border-radius: var(--el-radius-sm);
+  background: var(--el-bg-surface);
+  color: var(--el-text-color-primary);
+  font-size: var(--fs-13);
+  box-sizing: border-box;
+}
+
+.df-config-row select {
+  cursor: pointer;
+  min-height: 36px;
+}
+
+.df-config-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--el-border-color);
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.df-config-ok {
+  background: var(--el-color-primary);
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: var(--el-radius-sm);
+  cursor: pointer;
+}
+
+.df-config-cancel {
+  background: var(--el-bg-surface);
+  border: 1px solid var(--el-border-color);
+  color: var(--el-text-color-regular);
+  padding: 8px 16px;
+  border-radius: var(--el-radius-sm);
+  cursor: pointer;
+}
+
+/* ========== 夜间主题适配 ========== */
+:root.theme-dark #flowCanvas .drawflow {
+  background-image:
+    linear-gradient(to right, var(--el-border-dark) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--el-border-dark) 1px, transparent 1px);
+}
+
+:root.theme-dark #flowCanvas .drawflow-node {
+  background: var(--df-node-bg);
+  border-color: var(--df-node-border);
+}
+
+:root.theme-dark .flow-sidebar {
+  background: var(--df-sidebar-bg);
+}
+
+:root.theme-dark .flow-template {
+  background: var(--df-node-bg);
+  border-color: var(--df-node-border);
+}
+
+:root.theme-dark .flow-template:hover {
+  background: var(--df-node-border);
+  border-color: var(--el-color-primary);
+}
+
+:root.theme-dark .df-config-panel {
+  background: var(--df-node-bg);
+}
+
+:root.theme-dark .df-config-row input,
+:root.theme-dark .df-config-row select {
+  background: var(--df-input-bg);
+  border-color: var(--df-node-border);
+  color: var(--df-input-text);
+}
+
+/* ========== 节点分类颜色 ========== */
+/* 节点端口按类型显示不同颜色 */
+#flowCanvas .drawflow-node[data-category="input"] .input,
+#flowCanvas .drawflow-node[data-category="input"] .output {
+  background: #409EFF;
+}
+
+#flowCanvas .drawflow-node[data-category="transform"] .input,
+#flowCanvas .drawflow-node[data-category="transform"] .output {
+  background: #67C23A;
+}
+
+#flowCanvas .drawflow-node[data-category="split"] .input,
+#flowCanvas .drawflow-node[data-category="split"] .output {
+  background: #E6A23C;
+}
+
+#flowCanvas .drawflow-node[data-category="numeric"] .input,
+#flowCanvas .drawflow-node[data-category="numeric"] .output {
+  background: #F56C6C;
+}
+
+#flowCanvas .drawflow-node[data-category="string"] .input,
+#flowCanvas .drawflow-node[data-category="string"] .output {
+  background: #909399;
+}
+
+#flowCanvas .drawflow-node[data-category="control"] .input,
+#flowCanvas .drawflow-node[data-category="control"] .output {
+  background: #9B59B6;
+}
+
+#flowCanvas .drawflow-node[data-category="output"] .input,
+#flowCanvas .drawflow-node[data-category="output"] .output {
+  background: #7ee787;
+}
+
+/* 夜间模式下的节点分类边框色 */
+:root.theme-dark #flowCanvas .drawflow-node[data-category="input"] {
+  border-color: #58a6ff;
+}
+:root.theme-dark #flowCanvas .drawflow-node[data-category="transform"] {
+  border-color: #3fb950;
+}
+:root.theme-dark #flowCanvas .drawflow-node[data-category="split"] {
+  border-color: #d29922;
+}
+:root.theme-dark #flowCanvas .drawflow-node[data-category="numeric"] {
+  border-color: #f85149;
+}
+:root.theme-dark #flowCanvas .drawflow-node[data-category="control"] {
+  border-color: #a371f7;
+}
+:root.theme-dark #flowCanvas .drawflow-node[data-category="output"] {
+  border-color: #7ee787;
 }
 
 /* ========== 自动更新弹窗 ========== */

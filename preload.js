@@ -13,7 +13,15 @@ contextBridge.exposeInMainWorld('api', {
     close: (id) => ipcRenderer.invoke('tcp:close', { id }),
     onData: (cb) => ipcRenderer.on('tcp:data', (_e, p) => cb({ id: p.id, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
     onEvent: (cb) => ipcRenderer.on('tcp:event', (_e, p) => cb(p)),
-  },  
+  },
+  tcpServer: {
+    start: (port) => ipcRenderer.invoke('tcpServer:start', { port }),
+    stop: (id) => ipcRenderer.invoke('tcpServer:stop', { id }),
+    status: (id) => ipcRenderer.invoke('tcpServer:status', { id }),
+    broadcast: (id, data, mode, append, encoding) => ipcRenderer.invoke('tcpServer:broadcast', { id, data, mode, append, encoding }),
+    onData: (cb) => ipcRenderer.on('tcpServer:data', (_e, p) => cb({ serverId: p.serverId, clientId: p.clientId, bytes: decodeBase64ToUint8Array(p.base64), ts: p.ts })),
+    onEvent: (cb) => ipcRenderer.on('tcpServer:event', (_e, p) => cb(p)),
+  },
   tcpShare: {
     start: (id, port) => ipcRenderer.invoke('tcpShare:start', { id, port }),
     stop:  (id)       => ipcRenderer.invoke('tcpShare:stop',  { id }),
@@ -86,10 +94,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   app: {
     getVersion: () => ipcRenderer.invoke('app:version'),
-    checkUpdate: () => ipcRenderer.send('app:checkUpdate'),
-    onUpdateProgress: (cb) => ipcRenderer.on('update:progress', (_e, p) => cb(p)),
-    onUpdateError: (cb) => ipcRenderer.on('update:error', (_e, p) => cb(p)),
-    cancelUpdate: () => ipcRenderer.send('update:cancel')
+    checkUpdate: () => ipcRenderer.send('app:checkUpdate')
   },
   changelog: {
     open: () => ipcRenderer.send('changelog:open'),
@@ -99,6 +104,12 @@ contextBridge.exposeInMainWorld('api', {
   theme: {
     set: (dark) => ipcRenderer.send('theme:set', { dark }),
     onApply: (cb) => ipcRenderer.on('theme:apply', (_e, payload) => cb(payload))
+  },
+  virtualPort: {
+    create: () => ipcRenderer.invoke('virtualPort:create'),
+    destroy: (pairId) => ipcRenderer.invoke('virtualPort:destroy', { pairId }),
+    list: () => ipcRenderer.invoke('virtualPort:list'),
+    restore: () => ipcRenderer.invoke('virtualPort:restore'),
   }
 
 });
