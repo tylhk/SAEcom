@@ -5607,6 +5607,37 @@ async function refreshScriptList() {
         btnOutputClear.onclick = clearScriptOutput;
     }
 
+    // 输出面板拖拽调整大小
+    const outputResizeHandle = document.getElementById('outputResizeHandle');
+    const scriptOutputPanel = document.getElementById('scriptOutputPanel');
+    if (outputResizeHandle && scriptOutputPanel) {
+        let isResizing = false;
+        let startY = 0;
+        let startHeight = 0;
+
+        outputResizeHandle.addEventListener('mousedown', (e) => {
+            isResizing = true;
+            startY = e.clientY;
+            startHeight = scriptOutputPanel.offsetHeight;
+            outputResizeHandle.classList.add('dragging');
+            e.preventDefault();
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (!isResizing) return;
+            const deltaY = startY - e.clientY; // 向上拖增大高度
+            const newHeight = Math.max(80, Math.min(300, startHeight + deltaY));
+            scriptOutputPanel.style.height = newHeight + 'px';
+        });
+
+        document.addEventListener('mouseup', () => {
+            if (isResizing) {
+                isResizing = false;
+                outputResizeHandle.classList.remove('dragging');
+            }
+        });
+    }
+
     async function refreshScriptList() {
         const el = document.getElementById('scriptList');
         if (!el) return;
