@@ -361,6 +361,9 @@
                         <div class="settings-nav-item" data-tab="visuals">
                             <span class="icon">✨</span> 视觉效果
                         </div>
+                        <div class="settings-nav-item" data-tab="importexport">
+                            <span class="icon">📦</span> 导入导出
+                        </div>
                     </div>
 
                     <div class="settings-content">
@@ -491,12 +494,25 @@
                                 </label>
                             </div>
                         </div>
-                    </div>
-                </div>
 
-                <div class="dlg-footer">
-                    <button id="settingsOk">确定</button>
-                </div>
+                        <div class="settings-section" id="tab-importexport">
+                            <div class="settings-group-title">配置导入导出</div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">导出配置</div>
+                                    <div class="setting-desc">将当前所有设置、命令列表和面板配置保存为文件，可在其他电脑上导入使用</div>
+                                </div>
+                                <button id="btnExportConfig" style="padding:4px 14px;border:1px solid var(--el-border-color);border-radius:4px;background:var(--el-bg-surface);cursor:pointer;font-size:13px;color:var(--el-text-color-primary);white-space:nowrap;flex-shrink:0;">导出</button>
+                            </div>
+                            <div class="setting-item">
+                                <div class="setting-info">
+                                    <div class="setting-label">导入配置</div>
+                                    <div class="setting-desc">从文件读取配置并覆盖当前设置，导入后需重启软件生效</div>
+                                </div>
+                                <button id="btnImportConfig" style="padding:4px 14px;border:1px solid #f56c6c;border-radius:4px;background:transparent;cursor:pointer;font-size:13px;color:#f56c6c;white-space:nowrap;flex-shrink:0;">导入</button>
+                            </div>
+                        </div>
+                    </div>
             </div>
         </dialog>
         <dialog id="dlgChangelog" class="dlg-clean">

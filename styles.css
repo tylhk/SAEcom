@@ -616,6 +616,7 @@ input[type="number"],
   font-family: ui-monospace, Menlo, Consolas, monospace;
   padding: 10px;
   white-space: pre-wrap;
+  word-break: break-all;
   line-height: 1.35;
   color: var(--el-text-color-primary);
   background: var(--el-bg-surface);
@@ -1472,7 +1473,7 @@ dialog:not([open]) {
 .pane .body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: break-all;
   overflow-y: auto;
   overflow-x: hidden;
 }
@@ -1480,7 +1481,7 @@ dialog:not([open]) {
 .pop-body {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  word-break: break-word;
+  word-break: break-all;
   overflow-y: auto;
   overflow-x: hidden;
 }

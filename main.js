@@ -341,6 +341,69 @@ ipcMain.on('config:save', (_e, p) => savePanelsConfig(p));
 ipcMain.handle('commands:load', () => loadCommandsConfig());
 ipcMain.on('commands:save', (_e, c) => saveCommandsConfig(c));
 
+// 导出配置
+ipcMain.handle('config:export', async (_e, localStorageData) => {
+  const result = await dialog.showSaveDialog(mainWindow, {
+    title: '导出配置',
+    defaultPath: 'saecom-config.json',
+    filters: [{ name: 'JSON', extensions: ['json'] }]
+  });
+  if (result.canceled || !result.filePath) return { canceled: true };
+
+  const exportData = {
+    version: 1,
+    exportTime: new Date().toISOString(),
+    panels: loadPanelsConfig(),
+    commands: loadCommandsConfig(),
+    localStorage: localStorageData || {}
+  };
+
+  try {
+    fs.writeFileSync(result.filePath, JSON.stringify(exportData, null, 2), 'utf-8');
+    return { ok: true, filePath: result.filePath };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// 导入配置
+ipcMain.handle('config:import', async () => {
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: '导入配置',
+    filters: [{ name: 'JSON', extensions: ['json'] }],
+    properties: ['openFile']
+  });
+  if (result.canceled || !result.filePaths || !result.filePaths[0]) return { canceled: true };
+
+  try {
+    const content = fs.readFileSync(result.filePaths[0], 'utf-8');
+    const data = JSON.parse(content);
+    if (!data.version || !data.panels || !data.commands) {
+      return { ok: false, error: '无效的配置文件格式' };
+    }
+    return { ok: true, data };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// 应用导入的配置
+ipcMain.handle('config:applyImport', (_e, data) => {
+  try {
+    if (data.panels) savePanelsConfig(data.panels);
+    if (data.commands) saveCommandsConfig(data.commands);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+// 重启软件
+ipcMain.handle('app:restart', () => {
+  app.relaunch();
+  app.exit(0);
+});
+
 async function listSerialPortsSafe() {
   let base = [];
   try { base = await SerialPort.list(); } catch { base = []; }
@@ -558,6 +621,13 @@ ipcMain.handle('panel:popout', (_e, { id, title, historyStr, alwaysOnTop, isOpen
   return { ok: true };
 });
 ipcMain.on('panel:request-dock', (_e, { id, html }) => mainWindow?.webContents.send('panel:dock', { id, html }));
+ipcMain.on('panel:echo', (_e, { id, text, hex }) => {
+  const targetWin = BrowserWindow.getAllWindows().find(w => {
+    const url = w.webContents.getURL();
+    return url.includes('panel.html') && url.includes(`id=${encodeURIComponent(id)}`);
+  });
+  if (targetWin) targetWin.webContents.send('panel:echo', { id, text, hex });
+});
 
 ipcMain.handle('scripts:dir', () => scriptsDir);
 ipcMain.handle('scripts:list', () => { ensureScriptsDir(); return fs.readdirSync(scriptsDir).filter(f => f.endsWith('.js')); });
@@ -769,7 +839,7 @@ function checkForUpdates(isManual = false) {
       }
 
       const currentVer = app.getVersion();
-      console.log(`[Updater] Current: ${currentVer}, Remote Best: ${latestVer}`);
+      console.log(`[Updater] Current: ${currentVer}, Remote: ${latestVer}`);
 
       if (latestVer === '0.0.0' || !latestDownloadUrl || versionCompare(latestVer, currentVer) <= 0) {
         if (isManual) {
