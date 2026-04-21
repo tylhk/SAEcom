@@ -3084,11 +3084,35 @@ input[type="number"] {
 
 /* 脚本输出面板 */
 .script-output-panel {
+    min-height: 80px;
+    max-height: 300px;
     height: 120px;
     background: var(--el-bg-surface);
     border-top: 1px solid var(--el-border-color);
     display: flex;
     flex-direction: column;
+    position: relative;
+}
+
+.output-resize-handle {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    cursor: ns-resize;
+    background: transparent;
+    z-index: 10;
+}
+
+.output-resize-handle:hover {
+    background: var(--el-color-primary);
+    opacity: 0.4;
+}
+
+.output-resize-handle.dragging {
+    background: var(--el-color-primary);
+    opacity: 0.6;
 }
 
 .script-output-header {
